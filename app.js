@@ -39,6 +39,13 @@ const now = () => Date.now();
 const todayKey = () => C.dateKey(now());
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const signCls = (m) => (Math.abs(m) < 1 ? '' : m > 0 ? 'pos' : 'neg');
+/** Accepts "38.5", "38,5", "-1,5" or "−1.5"; returns null if not a number. */
+function parseNum(v) {
+  const t = String(v).trim().replace(',', '.').replace('−', '-');
+  if (t === '') return 0;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
 const fmtDays = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 function longDate(key) {
@@ -277,8 +284,8 @@ function viewVacation() {
   html += `</div>
 
   <h2>Allowance</h2><div class="list">
-    <label class="field inline"><span class="k">Days per year</span><input type="number" min="0" step="0.5" inputmode="decimal" data-set="vacationDaysPerYear" value="${state.settings.vacationDaysPerYear}"></label>
-    <label class="field inline"><span class="k">Carry-over / adjustment ${vacYear}</span><input type="number" step="0.5" inputmode="decimal" data-carry="${vacYear}" value="${state.settings.carryOver?.[vacYear] ?? 0}"></label>
+    <label class="field inline"><span class="k">Days per year</span><input type="text" inputmode="decimal" data-set="vacationDaysPerYear" value="${state.settings.vacationDaysPerYear}"></label>
+    <label class="field inline"><span class="k">Carry-over / adjustment ${vacYear}</span><input type="text" data-carry="${vacYear}" value="${state.settings.carryOver?.[vacYear] ?? 0}"></label>
   </div>
   <p class="muted small" style="margin:-4px 4px 0">Use the adjustment for leftover days from last year (positive) or days already taken before you started using this app (negative).</p>
 
@@ -297,12 +304,12 @@ function viewSettings() {
   ${standalone ? '' : `<div class="card small"><b>📲 Install on your iPhone:</b> open this page in Safari, tap <b>Share</b> → <b>Add to Home Screen</b>. It then opens full-screen and works offline.</div>`}
 
   <h2>Working time</h2><div class="list">
-    <label class="field inline"><span class="k">Hours per week</span><input type="number" min="0" max="80" step="0.25" inputmode="decimal" data-set="weeklyHours" value="${s.weeklyHours}"></label>
+    <label class="field inline"><span class="k">Hours per week</span><input type="text" inputmode="decimal" data-set="weeklyHours" value="${s.weeklyHours}"></label>
     <div class="field"><span class="k">Working days</span><div class="wdays">
       ${WD_ORDER.map((d) => `<label><input type="checkbox" data-wd="${d}" ${s.workdays.includes(d) ? 'checked' : ''}><span>${WD_SHORT[d].slice(0, 2)}</span></label>`).join('')}
     </div><div class="muted small" style="margin-top:8px">= ${C.fmtDur(perDay)} h per working day</div></div>
     <label class="field inline"><span class="k">Track balance from</span><input type="date" data-set="startDate" value="${s.startDate}"></label>
-    <label class="field inline"><span class="k">Starting overtime (h)</span><input type="number" step="0.25" inputmode="decimal" data-set="initialBalanceH" value="${(s.initialBalanceMin / 60).toFixed(2).replace(/\.?0+$/, '') || 0}"></label>
+    <label class="field inline"><span class="k">Starting overtime (h)</span><input type="text" data-set="initialBalanceH" value="${(s.initialBalanceMin / 60).toFixed(2).replace(/\.?0+$/, '') || 0}"></label>
   </div>
 
   <h2>Appointments</h2><div class="list">
@@ -318,7 +325,7 @@ function viewSettings() {
       <option value="deduct" ${s.pauseRule === 'deduct' ? 'selected' : ''}>Auto-deduct</option>
     </select></label>
     <label class="field inline"><span class="k">Minimum pause (min)</span><input type="number" min="0" step="5" inputmode="numeric" data-set="minPauseMin" value="${s.minPauseMin}"></label>
-    <label class="field inline"><span class="k">Required after (h)</span><input type="number" min="0" step="0.5" inputmode="decimal" data-set="minPauseAfterH" value="${s.minPauseAfterMin / 60}"></label>
+    <label class="field inline"><span class="k">Required after (h)</span><input type="text" inputmode="decimal" data-set="minPauseAfterH" value="${s.minPauseAfterMin / 60}"></label>
   </div>
 
   <h2>Public holidays</h2><div class="list">
@@ -575,10 +582,13 @@ document.addEventListener('change', (e) => {
     const d = Number(el.dataset.wd);
     s.workdays = el.checked ? [...new Set([...s.workdays, d])].sort() : s.workdays.filter((x) => x !== d);
   } else if (el.dataset.carry) {
-    s.carryOver = { ...s.carryOver, [el.dataset.carry]: Number(el.value) || 0 };
+    const n = parseNum(el.value);
+    if (n === null) { toast('Please enter a number, e.g. 2 or -1.5'); render(); return; }
+    s.carryOver = { ...s.carryOver, [el.dataset.carry]: n };
   } else if (el.dataset.set) {
     const k = el.dataset.set;
-    const num = Number(el.value);
+    const num = el.type === 'text' ? parseNum(el.value) : Number(el.value);
+    if (num === null) { toast('Please enter a number, e.g. 38.5 or 38,5'); render(); return; }
     if (k === 'initialBalanceH') s.initialBalanceMin = Math.round((num || 0) * 60);
     else if (k === 'minPauseAfterH') s.minPauseAfterMin = Math.round((num || 0) * 60);
     else if (['weeklyHours', 'vacationDaysPerYear', 'minPauseMin'].includes(k)) s[k] = Math.max(0, num || 0);

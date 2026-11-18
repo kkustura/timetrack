@@ -23,6 +23,11 @@ for (const scheme of ['light', 'dark']) {
   await page.fill('[data-set="startDate"]', '2026-11-01');
   await page.dispatchEvent('[data-set="startDate"]', 'change');
   await page.selectOption('[data-set="holidayRegion"]', 'AT');
+  await page.fill('[data-set="weeklyHours"]', '38,5');
+  await page.dispatchEvent('[data-set="weeklyHours"]', 'change');
+  assert.match(await page.textContent('#view'), /7:42 h per working day/);
+  await page.fill('[data-set="weeklyHours"]', '40');
+  await page.dispatchEvent('[data-set="weeklyHours"]', 'change');
   if (scheme === 'light') await page.screenshot({ path: `shots/settings-${scheme}.png`, fullPage: true });
 
   await page.click('[data-tab="today"]');

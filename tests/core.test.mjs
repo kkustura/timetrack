@@ -126,9 +126,26 @@ test('leave-at accounts for target', () => {
   C.clockIn(s, at(MON, '08:00'));
   const now = at(MON, '10:00');
   const d = C.dayStats(s, MON, now);
-  assert.equal(C.timeOf(C.leaveAt(s, d, d.target, now)), '16:00');
+  assert.equal(C.timeOf(C.leaveAt(s, d, d.target, now)), '16:30'); // includes 30 min break
   s.settings.pauseRule = 'deduct';
   assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, now), d.target, now)), '16:30');
+  s.settings.pauseRule = 'off';
+  assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, now), d.target, now)), '16:00');
+});
+
+test('38.5 h week: leave time includes the remaining break', () => {
+  const s = fresh();
+  s.settings.weeklyHours = 38.5; // 7:42 per day
+  C.clockIn(s, at(MON, '08:00'));
+  C.startPause(s, at(MON, '12:00'));
+  C.resume(s, at(MON, '12:10')); // 10 min taken, 20 min still owed
+  const now = at(MON, '13:00');
+  const d = C.dayStats(s, MON, now);
+  assert.equal(C.timeOf(C.leaveAt(s, d, d.target, now)), '16:12');
+  // late in the day with deduct active, leave time stays consistent
+  s.settings.pauseRule = 'deduct';
+  const late = at(MON, '15:00');
+  assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, late), d.target, late)), '16:12');
 });
 
 test('formatting', () => {

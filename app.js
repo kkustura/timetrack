@@ -280,7 +280,7 @@ function viewToday() {
   d.intervals.forEach((iv, i) => {
     if (i > 0 && iv.start > d.intervals[i - 1].end) {
       const prev = d.intervals[i - 1].end;
-      rows.push(`<div class="li"><span class="tag pause">Pause</span><span class="grow num">${C.timeOf(prev)}–${C.timeOf(iv.start)}</span><span class="num muted">${C.fmtDur((iv.start - prev) / C.MIN)}</span></div>`);
+      rows.push(`<div class="li"><span class="tag pause">Pause</span><span class="grow num">${C.timeOf(prev)}–${C.timeOf(iv.start)}${state.days[key]?.autoPause ? ' <span class="muted small">auto</span>' : ''}</span><span class="num muted">${C.fmtDur((iv.start - prev) / C.MIN)}</span></div>`);
     }
     rows.push(`<div class="li"><span class="tag work">Work</span><span class="grow num">${C.timeOf(iv.start)}–${iv.running ? 'now' : C.timeOf(iv.end)}</span><span class="num muted">${C.fmtDur((iv.end - iv.start) / C.MIN)}</span></div>`);
   });
@@ -469,8 +469,11 @@ function viewSettings() {
       <option value="deduct" ${s.pauseRule === 'deduct' ? 'selected' : ''}>Auto-deduct</option>
     </select></label>
     <label class="field inline"><span class="k">Minimum pause (min)</span><input type="number" min="0" step="5" inputmode="numeric" data-set="minPauseMin" value="${s.minPauseMin}"></label>
+    <label class="field inline"><span class="k">Add pause if none taken</span><input type="checkbox" data-set="autoPause" ${s.autoPause ? 'checked' : ''}></label>
+    ${s.autoPause ? `<label class="field inline"><span class="k">Automatic pause starts at</span><input ${TIME_ATTRS} data-set="autoPauseStart" value="${s.autoPauseStart}"></label>` : ''}
     <label class="field inline"><span class="k">Required after (h)</span><input type="text" inputmode="decimal" data-set="minPauseAfterH" value="${s.minPauseAfterMin / 60}"></label>
   </div>
+  ${s.autoPause ? `<p class="muted small" style="margin:-4px 4px 0">When you clock out after more than ${C.fmtDur(s.minPauseAfterMin)} h without any pause, ${s.autoPauseStart}–${C.timeOf(C.atTime('2000-01-01', s.autoPauseStart) + s.minPauseMin * C.MIN)} is recorded as pause.</p>` : ''}
 
   <h2>Public holidays</h2><div class="list">
     <label class="field inline"><span class="k">Region</span><select data-set="holidayRegion">
@@ -625,10 +628,10 @@ const actions = {
   pause() { C.startPause(state, now()); toast('Enjoy your break'); },
   resume() { C.resume(state, now()); toast('Back to work'); },
   out() {
-    C.clockOut(state, now());
+    const auto = C.clockOut(state, now());
     editSince = false;
     const d = C.dayStats(state, todayKey(), now());
-    toast(`Clocked out · ${C.fmtDur(d.worked)} h worked today`);
+    toast(`Clocked out · ${C.fmtDur(d.worked)} h worked${auto ? ` · ${state.settings.minPauseMin} min pause added` : ''}`);
   },
   'toggle-since'() { editSince = !editSince; },
   'fix-stale'() {
@@ -638,8 +641,8 @@ const actions = {
     if (v === null) { toast('Please enter a time like 16:30'); return false; }
     let end = v ? C.atTime(k, v) : cur.since;
     if (end < cur.since) end = cur.since;
-    C.clockOut(state, end);
-    toast('Fixed');
+    const auto = C.clockOut(state, end);
+    toast(auto ? `Fixed · ${state.settings.minPauseMin} min pause added` : 'Fixed');
   },
   edit(el) { openEditor(el.dataset.key); return false; },
   quick(el) {
@@ -751,7 +754,8 @@ document.addEventListener('change', (e) => {
     const k = el.dataset.set;
     const num = el.type === 'text' ? parseNum(el.value) : Number(el.value);
     if (num === null) { toast('Please enter a number, e.g. 38.5 or 38,5'); render(); return; }
-    if (k === 'initialBalanceH') s.initialBalanceMin = Math.round((num || 0) * 60);
+    if (el.type === 'checkbox') s[k] = el.checked;
+    else if (k === 'initialBalanceH') s.initialBalanceMin = Math.round((num || 0) * 60);
     else if (k === 'minPauseAfterH') s.minPauseAfterMin = Math.round((num || 0) * 60);
     else if (['weeklyHours', 'vacationDaysPerYear', 'minPauseMin'].includes(k)) s[k] = Math.max(0, num || 0);
     else if (el.classList.contains('tm')) { const hm = C.parseTime(el.value); if (!hm) return; s[k] = hm; }

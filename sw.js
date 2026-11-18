@@ -1,6 +1,6 @@
 // Offline support: always try the network first (so updates show up immediately),
 // fall back to the cached copy when offline.
-const CACHE = 'timetrack-v10';
+const CACHE = 'timetrack-v11';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'core.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 

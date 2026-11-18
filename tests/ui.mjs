@@ -176,6 +176,27 @@ for (const scheme of ['light', 'dark']) {
   await ctx.close();
 }
 
+// automatic pause when clocking out after a long day without a break
+{
+  const ctx = await browser.newContext({ ...devices['iPhone 15'], colorScheme: 'light' });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.clock.install({ time: new Date('2026-11-17T08:00:00') });
+  await page.goto(URL);
+  await page.click('[data-tab="today"]');
+  await page.click('[data-act="in"]');
+  await page.clock.fastForward('08:30:00');
+  await page.click('[data-act="out"]');
+  assert.match(await page.textContent('#toast'), /30 min pause added/);
+  const txt = (await page.textContent('#view')).replace(/\s+/g, ' ');
+  assert.match(txt, /Pause ?12:00–12:30 ?auto/);
+  assert.match(txt, /Today ±\s*\+0:00|Today ±\s*0:00/);
+  await page.screenshot({ path: 'shots/autopause-light.png' });
+  await page.click('[data-tab="settings"]');
+  assert.match(await page.textContent('#view'), /12:00–12:30 is recorded as pause/);
+  await ctx.close();
+}
+
 // render PNG icons from the SVG
 const ictx = await browser.newContext({ deviceScaleFactor: 1 });
 const ip = await ictx.newPage();

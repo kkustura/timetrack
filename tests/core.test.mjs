@@ -182,8 +182,9 @@ test('today only counts toward balance after clocking out', () => {
   C.clockIn(s, at(MON, '08:00'));
   assert.equal(C.balanceBefore(s, C.addDays(MON, 1), noon), 0); // still working
   C.clockOut(s, at(MON, '15:00'));
-  assert.equal(C.balanceBefore(s, C.addDays(MON, 1), at(MON, '16:00')), -60);
-  assert.equal(C.balanceBefore(s, '2026-11-18', at('2026-11-18', '09:00')), -60 - 480); // Tue missed
+  // 7 h without a break → 30 min automatic pause → 6:30 credited
+  assert.equal(C.balanceBefore(s, C.addDays(MON, 1), at(MON, '16:00')), -90);
+  assert.equal(C.balanceBefore(s, '2026-11-18', at('2026-11-18', '09:00')), -90 - 480); // Tue missed
 });
 
 test('typed times', () => {
@@ -200,4 +201,41 @@ test('days before the start date do not count toward week/month ±', () => {
   const wk = C.rangeTotals(s, MON, '2026-11-22', '2026-11-19', at('2026-11-19', '07:00'));
   assert.equal(wk.credited, 480);   // hours are still shown
   assert.equal(wk.diff, -480);      // only Wednesday (missed) counts
+});
+
+test('automatic pause on clock-out', () => {
+  // full day without pause → 12:00–12:30 inserted
+  let s = fresh();
+  C.clockIn(s, at(MON, '08:00'));
+  assert.equal(C.clockOut(s, at(MON, '16:30')), true);
+  let d = C.dayStats(s, MON, at(MON, '18:00'));
+  assert.equal(d.worked, 480);
+  assert.equal(d.pause, 30);
+  assert.equal(C.timeOf(s.days[MON].work[0].end), '12:00');
+  assert.equal(d.warnings.length, 0);
+
+  // short day (≤ 6 h) → untouched
+  s = fresh();
+  C.clockIn(s, at(MON, '08:00'));
+  assert.equal(C.clockOut(s, at(MON, '12:45')), false);
+  assert.equal(C.dayStats(s, MON).pause, 0);
+
+  // pause already taken → untouched
+  s = fresh();
+  C.clockIn(s, at(MON, '08:00'));
+  C.startPause(s, at(MON, '11:00'));
+  C.resume(s, at(MON, '11:10'));
+  assert.equal(C.clockOut(s, at(MON, '16:30')), false);
+  assert.equal(C.dayStats(s, MON).pause, 10);
+
+  // started after 12:00 → window not inside work time → untouched
+  s = fresh();
+  C.clockIn(s, at(MON, '12:15'));
+  assert.equal(C.clockOut(s, at(MON, '19:00')), false);
+
+  // switched off → untouched
+  s = fresh();
+  s.settings.autoPause = false;
+  C.clockIn(s, at(MON, '08:00'));
+  assert.equal(C.clockOut(s, at(MON, '16:30')), false);
 });

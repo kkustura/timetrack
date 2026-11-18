@@ -32,6 +32,8 @@ export function defaultSettings(today = dateKey(Date.now())) {
     pauseRule: 'warn',                // 'off' | 'warn' | 'deduct'
     minPauseMin: 30,
     minPauseAfterMin: 360,
+    autoPause: true,                  // insert a pause on clock-out if none was taken
+    autoPauseStart: '12:00',          // …starting at this time, lasting minPauseMin
     holidayRegion: 'none',
   };
 }
@@ -393,10 +395,31 @@ export function resume(state, now) {
   if (state.current?.mode === 'pause') state.current = { mode: 'work', since: now };
 }
 
+/** Returns true if a pause was inserted automatically. */
 export function clockOut(state, now) {
-  if (!state.current) return;
+  if (!state.current) return false;
+  const key = dateKey(state.current.since);
   if (state.current.mode === 'work') closeWork(state, Math.max(now, state.current.since));
   state.current = null;
+  return applyAutoPause(state, key);
+}
+
+/** If a day of more than `minPauseAfterMin` was worked without any pause, cut the
+ *  standard pause (autoPauseStart, minPauseMin long) out of the work time. */
+export function applyAutoPause(state, key) {
+  const s = state.settings;
+  const day = state.days[key];
+  if (!s.autoPause || !day?.work?.length || !(s.minPauseMin > 0)) return false;
+  const merged = merge(day.work.map((w) => [w.start, w.end]));
+  if (merged.length !== 1) return false; // a pause was already taken
+  const [a, b] = merged[0];
+  if ((b - a) / MIN <= s.minPauseAfterMin) return false;
+  const ps = atTime(key, s.autoPauseStart);
+  const pe = ps + s.minPauseMin * MIN;
+  if (ps <= a || pe >= b) return false; // pause window must lie inside the work time
+  day.work = [{ start: a, end: ps }, { start: pe, end: b }];
+  day.autoPause = true;
+  return true;
 }
 
 // ---------- export / import ----------

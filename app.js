@@ -160,11 +160,12 @@ function fridayNote(key, d, t) {
   const still = goal - d.credited;
   let msg;
   if (still <= 0) {
-    msg = `This week's ${C.fmtDur(wk.target)} h are done (${C.fmtDur(-still, true)}). Have a nice weekend!`;
+    msg = 'Weekly balance reached – enjoy your weekend! 🏖️';
   } else {
     const leave = C.leaveAt(state, d, goal, t);
-    msg = `This week: ${C.fmtDur(wk.credited)} of ${C.fmtDur(wk.target)} h. ${C.fmtDur(still)} h still to go today`
-      + (leave && C.dateKey(leave) === key ? ` — you can leave at ${C.timeOf(leave)}.` : '.');
+    msg = leave && C.dateKey(leave) === key
+      ? `Weekly balance – you can leave at ${C.timeOf(leave)}! 🏖️`
+      : `Weekly balance – ${C.fmtDur(still)} h to go today 🏖️`;
   }
   return `<div class="friday-note">${msg}</div>`;
 }

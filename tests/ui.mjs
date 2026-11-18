@@ -166,10 +166,10 @@ for (const scheme of ['light', 'dark']) {
   await page.reload();
   await page.click('[data-tab="today"]');
   let note = (await page.textContent('.friday-note')).replace(/\s+/g, ' ');
-  assert.match(note, /34:00 of 38:30 h\. 4:30 h still to go today\.$/, note);
+  assert.match(note, /^Weekly balance – 4:30 h to go today 🏖️$/, note);
   await page.click('[data-act="in"]');
   note = (await page.textContent('.friday-note')).replace(/\s+/g, ' ');
-  assert.match(note, /you can leave at 12:30/, note);
+  assert.match(note, /^Weekly balance – you can leave at 12:30! 🏖️$/, note);
   await page.screenshot({ path: 'shots/friday-light.png' });
   await page.keyboard.press('ArrowLeft'); // Thursday: no note
   assert.equal(await page.$('.friday-note'), null);

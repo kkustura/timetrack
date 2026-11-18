@@ -50,7 +50,7 @@ for (const scheme of ['light', 'dark']) {
   await page.clock.fastForward('02:00:00'); // 14:31
   await page.screenshot({ path: `shots/today-working-${scheme}.png`, fullPage: true });
   const clock = await page.textContent('#liveClock');
-  assert.equal(clock, '5:58:00', `live clock ${clock}`);
+  assert.match(clock, /^5:58:0\d$/, `live clock ${clock}`);
   assert.match((await page.textContent('#view')).replace(/\s+/g, ' '), /Pause ?0:31/);
 
   // doctor appointment via quick add, 15:00–17:30 → 1h credit

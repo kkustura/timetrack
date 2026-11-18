@@ -610,7 +610,12 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('storage', (e) => { if (e.key === STORAGE_KEY) { state = load(); render(); } });
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => reg.update()).catch(() => {});
+  // When a new version takes over, reload once so it is used right away (your data is unaffected).
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && !draft) location.reload();
+  });
 }
 
 render();

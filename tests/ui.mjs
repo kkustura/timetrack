@@ -82,7 +82,7 @@ for (const scheme of ['light', 'dark']) {
   // month
   await page.click('[data-tab="month"]');
   await page.screenshot({ path: `shots/month-${scheme}.png`, fullPage: true });
-  await page.click('.day.today');
+  await page.click('.cal-cell.today');
   await page.click('[data-act="dlg-add-work"]');
   await page.click('[data-act="dlg-cancel"]');
 

@@ -192,3 +192,12 @@ test('typed times', () => {
   for (const [inp, out] of Object.entries(ok)) assert.equal(C.parseTime(inp), out, inp);
   for (const bad of ['25:00', '8:60', '8:5', '8.2', 'abc', '12345', '7:30pm']) assert.equal(C.parseTime(bad), null, bad);
 });
+
+test('days before the start date do not count toward week/month ±', () => {
+  const s = fresh();
+  s.settings.startDate = '2026-11-18'; // Wednesday
+  s.days[MON] = { work: [{ start: at(MON, '08:00'), end: at(MON, '16:00') }] };
+  const wk = C.rangeTotals(s, MON, '2026-11-22', '2026-11-19', at('2026-11-19', '07:00'));
+  assert.equal(wk.credited, 480);   // hours are still shown
+  assert.equal(wk.diff, -480);      // only Wednesday (missed) counts
+});

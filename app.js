@@ -105,6 +105,13 @@ function goDay(delta) {
   render();
 }
 
+function goMonth(delta) {
+  const d = new Date(cursor.y, cursor.m + delta, 1);
+  cursor = { y: d.getFullYear(), m: d.getMonth() };
+  slide = delta < 0 ? 'prev' : 'next';
+  render();
+}
+
 async function exportBackup() {
   const ok = await deliverFile(`timetracker-backup-${todayKey()}.json`, JSON.stringify(state, null, 1), 'application/json');
   if (!ok) return;
@@ -186,7 +193,7 @@ function viewToday() {
   const d = C.dayStats(state, key, t);
   const cur = state.current;
   const before = C.balanceBefore(state, key, t);
-  const counts = C.countsTowardBalance(d, today);
+  const counts = C.countsTowardBalance(d, today, state.settings.startDate);
   const balance = before + (counts ? d.diff : 0);
   const stale = isToday && cur && C.dateKey(cur.since) !== key;
 
@@ -334,27 +341,45 @@ function viewMonth() {
     <div class="stat"><div class="k">Balance at ${last < today ? 'month end' : 'today'}</div><div class="v ${signCls(endBal)}">${C.fmtDur(endBal, true)}</div></div>
   </div>
   <div class="row" style="margin-top:12px"><button class="b-small" data-act="csv">⬇︎ Export CSV</button>
-  <span class="muted small">Worked ${C.fmtDur(tot.worked)} · pause ${C.fmtDur(tot.pause)}</span></div></section>
-  <div class="list">`;
+  <span class="muted small">Worked ${C.fmtDur(tot.worked)} · pause ${C.fmtDur(tot.pause)}</span></div></section>`;
 
-  html += tot.days.map((d) => {
+  // calendar grid, Monday first
+  const lead = (C.weekday(first) + 6) % 7;
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<div class="cal-cell other" aria-hidden="true"></div>');
+  const holidays = [];
+  for (const d of tot.days) {
     const wd = C.weekday(d.key);
-    const off = !d.target && !d.intervals.length && !d.absences.length;
-    const parts = [];
-    if (d.intervals.length) parts.push(`<span class="num">${C.timeOf(d.first)}–${d.running ? '…' : C.timeOf(d.last)}</span>${d.pause >= 1 ? ` <span class="muted small">⏸${C.fmtDur(d.pause)}</span>` : ''}`);
-    d.absences.filter((a) => a.type !== 'publicHoliday').forEach((a) => parts.push(`<span class="tag ${a.type === 'vacation' ? 'vac' : ''}">${esc(absLabel(a))}</span>`));
-    if (d.holiday) parts.push(`<span class="muted small">🎉 ${esc(d.holiday)}</span>`);
-    if (d.note) parts.push('<span class="muted small">📝</span>');
-    if (d.warnings.length) parts.push('<span class="small">⚠️</span>');
-    const showDiff = C.countsTowardBalance(d, today) && (d.target || d.credited);
-    return `<div class="li tap day ${off ? 'off' : ''} ${d.key === today ? 'today' : ''}" data-act="edit" data-key="${d.key}">
-      <div class="d">${Number(d.key.slice(8))}<small>${WD_SHORT[wd]}</small></div>
-      <div class="grow" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${parts.join('')}</div>
-      <div class="w num">${d.credited >= 1 ? C.fmtDur(d.credited) : ''}</div>
-      <div class="x num ${showDiff ? signCls(d.diff) : ''}">${showDiff ? C.fmtDur(d.diff, true) : ''}</div>
-    </div>`;
-  }).join('');
-  return html + '</div>';
+    const weekend = !state.settings.workdays.includes(wd);
+    const vacation = d.absences.some((a) => a.type === 'vacation');
+    const dayOff = !!d.holiday || vacation;
+    if (d.holiday) holidays.push(d);
+    const showDiff = C.countsTowardBalance(d, today, state.settings.startDate) && (d.target || d.credited);
+    const icons = [...new Set(d.absences.filter((a) => a.type !== 'publicHoliday' && a.type !== 'vacation')
+      .map((a) => C.ABSENCE_TYPES[a.type]?.icon))].join('') + (d.note ? '📝' : '') + (d.warnings.length ? '⚠️' : '');
+    const title = [shortDate(d.key), d.holiday, ...d.absences.filter((a) => a.type !== 'publicHoliday').map(absLabel)].filter(Boolean).join(' · ');
+    cells.push(`<div class="cal-cell${weekend ? ' weekend' : ''}${dayOff ? ' dayoff' : ''}${d.key === today ? ' today' : ''}${d.running || d.onPause ? ' live' : ''}"
+        data-act="edit" data-key="${d.key}" title="${esc(title)}" role="button" aria-label="${esc(title)}">
+      <span class="cn">${Number(d.key.slice(8))}</span>
+      ${vacation ? '<span class="ci">🌴</span>' : d.credited >= 1 ? `<span class="ch">${C.fmtDur(d.credited)}</span>` : ''}
+      ${showDiff && !vacation ? `<span class="cd ${signCls(d.diff)}">${C.fmtDur(d.diff, true)}</span>` : ''}
+      ${icons ? `<span class="ci">${icons}</span>` : ''}
+    </div>`);
+  }
+  while (cells.length % 7) cells.push('<div class="cal-cell other" aria-hidden="true"></div>');
+
+  html += `<div class="cal">
+    ${WD_ORDER.map((w) => `<div class="cal-h">${WD_SHORT[w].slice(0, 2)}</div>`).join('')}
+    ${cells.join('')}
+  </div>
+  <div class="legend" style="margin:10px 4px 0">
+    <span style="--c:var(--neg)">Holiday / vacation</span><span style="--c:var(--pos)">Above target</span><span style="--c:var(--accent)">Today</span>
+  </div>`;
+  if (holidays.length) {
+    html += `<h2>Public holidays</h2><div class="list">${holidays.map((d) =>
+      `<div class="li"><span class="cal-hn">${Number(d.key.slice(8))}</span><span class="grow">${esc(d.holiday)}</span><span class="muted small">${WD_SHORT[C.weekday(d.key)]}</span></div>`).join('')}</div>`;
+  }
+  return html;
 }
 
 function viewVacation() {
@@ -635,10 +660,7 @@ const actions = {
   },
   'backup-now'() { exportBackup(); return false; },
   'backup-later'() { state.meta.backupSnoozeUntil = Date.now() + 7 * DAY; toast("OK, I'll remind you in a week"); },
-  month(el) {
-    const d = new Date(cursor.y, cursor.m + Number(el.dataset.d), 1);
-    cursor = { y: d.getFullYear(), m: d.getMonth() };
-  },
+  month(el) { goMonth(Number(el.dataset.d)); return false; },
   vyear(el) { vacYear += Number(el.dataset.d); },
   'add-vac'() {
     const from = document.getElementById('vFrom').value;
@@ -754,7 +776,7 @@ document.addEventListener('change', (e) => {
 // Swipe left → previous day, swipe right → next day (as requested).
 let touch = null;
 $view.addEventListener('touchstart', (e) => {
-  touch = tab === 'today' && e.touches.length === 1
+  touch = (tab === 'today' || tab === 'month') && e.touches.length === 1
     ? { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now() } : null;
 }, { passive: true });
 $view.addEventListener('touchend', (e) => {
@@ -765,13 +787,14 @@ $view.addEventListener('touchend', (e) => {
   touch = null;
   if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
   if (e.target.closest('input, textarea, select')) return;
-  goDay(dx < 0 ? -1 : 1);
+  if (tab === 'month') goMonth(dx < 0 ? -1 : 1); else goDay(dx < 0 ? -1 : 1);
 }, { passive: true });
 document.addEventListener('keydown', (e) => {
-  if (tab !== 'today' || $dlg.open || e.metaKey || e.ctrlKey || e.altKey) return;
+  if ((tab !== 'today' && tab !== 'month') || $dlg.open || e.metaKey || e.ctrlKey || e.altKey) return;
   if (document.activeElement?.matches('input, textarea, select')) return;
-  if (e.key === 'ArrowLeft') goDay(-1);
-  else if (e.key === 'ArrowRight') goDay(1);
+  const go = tab === 'month' ? goMonth : goDay;
+  if (e.key === 'ArrowLeft') go(-1);
+  else if (e.key === 'ArrowRight') go(1);
 });
 
 // ---------- live updates ----------

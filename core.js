@@ -284,8 +284,10 @@ export function dayStats(state, key, now = Date.now()) {
   };
 }
 
-/** Past days always count; today only once you've clocked out and recorded something. */
-export function countsTowardBalance(d, today) {
+/** Days from the start date on count; past days always, today only once you've
+ *  clocked out and recorded something. */
+export function countsTowardBalance(d, today, startDate = '') {
+  if (d.key < startDate) return false;
   return d.key < today || (d.key === today && !d.running && !d.onPause && d.credited > 0);
 }
 
@@ -311,7 +313,7 @@ export function rangeTotals(state, from, to, today, now = Date.now()) {
       t.worked += d.worked;
       t.pause += d.pause;
       t.credited += d.credited;
-      if (countsTowardBalance(d, today)) t.diff += d.diff;
+      if (countsTowardBalance(d, today, state.settings.startDate)) t.diff += d.diff;
     }
   }
   return t;

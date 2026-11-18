@@ -128,6 +128,25 @@ button:active { transform: scale(.98); }
 @keyframes slidePrev { from { transform: translateX(-28px); opacity: .25; } }
 @keyframes slideNext { from { transform: translateX(28px); opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .slide-prev, .slide-next { animation: none; } }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-h { text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); padding-bottom: 2px; }
+.cal-cell {
+  background: var(--card); border-radius: 10px; min-height: 66px; padding: 6px 2px 4px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: pointer;
+  font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden;
+}
+.cal-cell:active { background: var(--chip); }
+.cal-cell.other { visibility: hidden; }
+.cal-cell.weekend { background: transparent; }
+.cal-cell.weekend .cn { color: var(--muted); }
+.cal-cell.dayoff .cn { color: var(--neg); }
+.cal-cell.today { box-shadow: inset 0 0 0 2px var(--accent); }
+.cal-cell.live .ch { color: var(--work); }
+.cn { font-weight: 650; font-size: 15px; line-height: 1.2; }
+.ch { font-size: 11px; }
+.cd { font-size: 10px; font-weight: 600; }
+.ci { font-size: 11px; line-height: 1.3; white-space: nowrap; }
+.cal-hn { color: var(--neg); font-weight: 650; min-width: 22px; }
 .monthnav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .monthnav h1 { margin: 0; }
 

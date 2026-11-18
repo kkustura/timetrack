@@ -109,7 +109,7 @@ function viewToday() {
     html += `<div class="warn">
       <b>Still ${cur.mode === 'work' ? 'clocked in' : 'on pause'} since ${esc(shortDate(k))}, ${C.timeOf(cur.since)}.</b> Forgot to clock out?
       <div class="row" style="margin-top:8px">
-        ${cur.mode === 'work' ? `<span>Clock out at</span><input type="time" id="staleOut" value="${C.timeOf(Math.max(cur.since, C.atTime(k, '16:30')))}" style="width:auto">` : ''}
+        ${cur.mode === 'work' ? `<span>Clock out at</span><input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" id="staleOut" value="${C.timeOf(Math.max(cur.since, C.atTime(k, '16:30')))}">` : ''}
         <button class="b-small b-accent" data-act="fix-stale">${cur.mode === 'work' ? 'Save' : 'End pause'}</button>
       </div></div>`;
   }
@@ -125,7 +125,7 @@ function viewToday() {
       ${mode ? `<button class="b-link b-small" data-act="toggle-since">${editSince ? 'Done' : 'Adjust'}</button>` : ''}
     </div>
     ${mode && editSince ? `<div class="row" style="margin-top:10px"><span class="muted small">${mode === 'work' ? 'Started' : 'Pause started'} at</span>
-      <input type="time" id="sinceInput" value="${C.timeOf(cur.since)}" style="width:auto"></div>` : ''}
+      <input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" id="sinceInput" value="${C.timeOf(cur.since)}"></div>` : ''}
     <div class="big" id="liveClock">${C.fmtClock(d.worked)}</div>
     <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${d.apptCredit || d.absenceCredit ? ` · +${C.fmtDur(d.absenceCredit)} absence credit` : ''}</div>
     <div class="btns">
@@ -313,8 +313,8 @@ function viewSettings() {
   </div>
 
   <h2>Appointments</h2><div class="list">
-    <label class="field inline"><span class="k">Count as work from</span><input type="time" data-set="apptWindowStart" value="${s.apptWindowStart}"></label>
-    <label class="field inline"><span class="k">until</span><input type="time" data-set="apptWindowEnd" value="${s.apptWindowEnd}"></label>
+    <label class="field inline"><span class="k">Count as work from</span><input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-set="apptWindowStart" value="${s.apptWindowStart}"></label>
+    <label class="field inline"><span class="k">until</span><input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-set="apptWindowEnd" value="${s.apptWindowEnd}"></label>
   </div>
   <p class="muted small" style="margin:-4px 4px 0">A doctor's appointment from 15:00–17:30 credits 1:00 h (15:00–16:00).</p>
 
@@ -380,9 +380,9 @@ function renderEditor() {
     <h2>Work periods</h2>
     <div class="list">
       ${draft.work.map((w, i) => `<div class="erow">
-        <input type="time" data-w="${i}" data-f="start" value="${w.start}" aria-label="Start">
+        <input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-w="${i}" data-f="start" value="${w.start}" aria-label="Start">
         <span class="muted">–</span>
-        <input type="time" data-w="${i}" data-f="end" value="${w.end}" aria-label="End">
+        <input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-w="${i}" data-f="end" value="${w.end}" aria-label="End">
         <span class="grow"></span>
         <button type="button" class="b-icon" data-act="dlg-del-work" data-i="${i}" aria-label="Delete period">✕</button>
       </div>`).join('')}
@@ -400,7 +400,7 @@ function renderEditor() {
             ${Object.entries(C.ABSENCE_TYPES).map(([k, v]) => `<option value="${k}" ${k === a.type ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
           </select>
           <button type="button" class="b-icon" data-act="dlg-del-abs" data-i="${i}" aria-label="Delete">✕</button>
-          ${t.timed ? `<input type="time" data-a="${i}" data-f="start" value="${a.start || ''}" aria-label="From"><span class="muted">–</span><input type="time" data-a="${i}" data-f="end" value="${a.end || ''}" aria-label="Until">` : ''}
+          ${t.timed ? `<input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-a="${i}" data-f="start" value="${a.start || ''}" aria-label="From"><span class="muted">–</span><input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-a="${i}" data-f="end" value="${a.end || ''}" aria-label="Until">` : ''}
           ${t.allowHalf ? `<label class="row small"><input type="checkbox" data-a="${i}" data-f="half" ${a.half ? 'checked' : ''}> Half day</label>` : ''}
           <input type="text" data-a="${i}" data-f="note" value="${esc(a.note || '')}" placeholder="${a.type === 'publicHoliday' ? 'Name of holiday' : 'Note (optional)'}">
           ${t.timed ? `<span class="muted small">Counts as work between ${s.apptWindowStart} and ${s.apptWindowEnd}.</span>` : ''}
@@ -419,6 +419,10 @@ function renderEditor() {
 
 function saveEditor() {
   const { key } = draft;
+  const typed = [...draft.work.flatMap((w) => [w.start, w.end]), ...draft.absences.filter((a) => C.ABSENCE_TYPES[a.type].timed).flatMap((a) => [a.start, a.end])];
+  if (typed.some((v) => C.parseTime(v) === null)) { toast('Please enter times like 8:24 (or 824)'); return; }
+  draft.work.forEach((w) => { w.start = C.parseTime(w.start); w.end = C.parseTime(w.end); });
+  draft.absences.forEach((a) => { if (a.start) a.start = C.parseTime(a.start); if (a.end) a.end = C.parseTime(a.end); });
   const work = [];
   for (const w of draft.work) {
     if (!w.start || !w.end) continue;
@@ -486,7 +490,8 @@ const actions = {
   'fix-stale'() {
     const cur = state.current;
     const k = C.dateKey(cur.since);
-    const v = document.getElementById('staleOut')?.value;
+    const v = C.parseTime(document.getElementById('staleOut')?.value);
+    if (v === null) { toast('Please enter a time like 16:30'); return false; }
     let end = v ? C.atTime(k, v) : cur.since;
     if (end < cur.since) end = cur.since;
     C.clockOut(state, end);
@@ -562,7 +567,9 @@ document.addEventListener('change', (e) => {
   if (el.closest('dialog')) return;
   const s = state.settings;
   if (el.id === 'sinceInput' && state.current && el.value) {
-    const since = C.atTime(C.dateKey(state.current.since), el.value);
+    const hm = C.parseTime(el.value);
+    if (!hm) return; // invalid input is flagged by the time-field handler
+    const since = C.atTime(C.dateKey(state.current.since), hm);
     if (since > now()) { toast('That time is in the future'); render(); return; }
     // keep the pause/work order intact: can't start before the previous work period ended
     const prev = (state.days[C.dateKey(since)]?.work || []).map((w) => w.end).filter((x) => x <= state.current.since);
@@ -592,10 +599,23 @@ document.addEventListener('change', (e) => {
     if (k === 'initialBalanceH') s.initialBalanceMin = Math.round((num || 0) * 60);
     else if (k === 'minPauseAfterH') s.minPauseAfterMin = Math.round((num || 0) * 60);
     else if (['weeklyHours', 'vacationDaysPerYear', 'minPauseMin'].includes(k)) s[k] = Math.max(0, num || 0);
+    else if (el.classList.contains('tm')) { const hm = C.parseTime(el.value); if (!hm) return; s[k] = hm; }
     else if (el.value) s[k] = el.value;
   } else return;
   save(); render();
 });
+
+// Tidy a typed time when you leave the field: "824" → "08:24"; flag it if it isn't a time.
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!el.classList?.contains('tm')) return;
+  const hm = C.parseTime(el.value);
+  el.classList.toggle('bad', hm === null);
+  if (hm === null) { toast('Please enter a time like 8:24 (or 824)'); return; }
+  el.value = hm;
+  if (draft && el.dataset.w) draft.work[el.dataset.w][el.dataset.f] = hm;
+  if (draft && el.dataset.a) draft.absences[el.dataset.a][el.dataset.f] = hm;
+}, true);
 
 // ---------- live updates ----------
 

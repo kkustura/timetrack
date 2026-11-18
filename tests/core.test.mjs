@@ -185,3 +185,10 @@ test('today only counts toward balance after clocking out', () => {
   assert.equal(C.balanceBefore(s, C.addDays(MON, 1), at(MON, '16:00')), -60);
   assert.equal(C.balanceBefore(s, '2026-11-18', at('2026-11-18', '09:00')), -60 - 480); // Tue missed
 });
+
+test('typed times', () => {
+  const ok = { '8:24': '08:24', '08:24': '08:24', '8.24': '08:24', '8,24': '08:24', '824': '08:24', '0824': '08:24',
+    '1630': '16:30', '8': '08:00', '16': '16:00', '8:': '08:00', ' 9h15 ': '09:15', '': '' };
+  for (const [inp, out] of Object.entries(ok)) assert.equal(C.parseTime(inp), out, inp);
+  for (const bad of ['25:00', '8:60', '8:5', '8.2', 'abc', '12345', '7:30pm']) assert.equal(C.parseTime(bad), null, bad);
+});

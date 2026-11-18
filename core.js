@@ -74,6 +74,23 @@ export function atTime(key, hm) {
   return d.getTime();
 }
 
+/** Typed time → 'HH:MM'. Accepts "8:24", "08:24", "8.24", "8,24", "8h24", "824", "0824", "8".
+ *  A single minute digit ("8:5") is rejected because it is ambiguous.
+ *  Returns '' for empty input and null if it isn't a valid time. */
+export function parseTime(str) {
+  const t = String(str ?? '').trim().replace(/[.,hH ]/g, ':');
+  if (t === '') return '';
+  let h, m;
+  let match;
+  if ((match = t.match(/^(\d{1,2}):(\d{2})?$/))) { h = +match[1]; m = +(match[2] || 0); }
+  else if ((match = t.match(/^\d{1,4}$/))) {
+    const d = match[0];
+    if (d.length <= 2) { h = +d; m = 0; } else { h = +d.slice(0, -2); m = +d.slice(-2); }
+  } else return null;
+  if (h > 23 || m > 59) return null;
+  return `${pad(h)}:${pad(m)}`;
+}
+
 export function timeOf(t) {
   const d = new Date(t);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;

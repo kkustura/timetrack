@@ -32,6 +32,14 @@ for (const scheme of ['light', 'dark']) {
 
   await page.click('[data-tab="today"]');
   await page.click('[data-act="in"]');
+  await page.click('[data-act="toggle-since"]');
+  await page.fill('#sinceInput', '8.2');
+  await page.press('#sinceInput', 'Tab');
+  assert.equal(await page.getAttribute('#sinceInput', 'class'), 'tm bad');
+  await page.fill('#sinceInput', '802');
+  await page.press('#sinceInput', 'Tab');
+  assert.match(await page.textContent('#view'), /Working since 08:02/);
+  await page.click('[data-act="toggle-since"]');
   await page.clock.fastForward('03:58:00'); // 12:00
   await page.click('[data-act="pause"]');
   await page.clock.fastForward('00:31:00'); // 12:31
@@ -44,8 +52,10 @@ for (const scheme of ['light', 'dark']) {
 
   // doctor appointment via quick add, 15:00–17:30 → 1h credit
   await page.click('[data-act="quick"][data-type="doctor"]');
-  await page.fill('[data-a="0"][data-f="start"]', '15:00');
-  await page.fill('[data-a="0"][data-f="end"]', '17:30');
+  await page.fill('[data-a="0"][data-f="start"]', '1500');
+  await page.press('[data-a="0"][data-f="start"]', 'Tab');
+  assert.equal(await page.inputValue('[data-a="0"][data-f="start"]'), '15:00');
+  await page.fill('[data-a="0"][data-f="end"]', '17,30');
   await page.screenshot({ path: `shots/editor-${scheme}.png` });
   await page.click('[data-act="dlg-save"]');
   await page.clock.fastForward('00:29:00'); // 15:00

@@ -140,7 +140,9 @@ input, select, textarea {
 }
 .field.inline input, .field.inline select { width: auto; max-width: 55%; text-align: right; }
 input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); }
-input[type="time"] { min-width: 96px; }
+input.tm { width: 5.2em; flex: 0 0 auto; text-align: center; font-variant-numeric: tabular-nums; }
+.field.inline input.tm { width: 5.2em; text-align: center; }
+input.bad { box-shadow: 0 0 0 2px var(--danger); }
 textarea { min-height: 70px; resize: vertical; }
 .wdays { display: flex; gap: 6px; flex-wrap: wrap; }
 .wdays label { flex: 1; min-width: 38px; }
@@ -162,8 +164,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .4); }
 .erow { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .erow:last-child { border-bottom: 0; }
 .erow select { flex: 1 1 calc(100% - 60px); min-width: 150px; }
-.erow input[type="text"] { flex: 1 1 100%; }
-.erow input[type="time"] { flex: 1 1 110px; width: auto; }
+.erow input[type="text"]:not(.tm) { flex: 1 1 100%; }
 .erow > .muted.small { flex-basis: 100%; }
 
 /* tab bar */

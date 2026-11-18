@@ -1,5 +1,5 @@
 // Offline support: serve the app from cache, refresh the cache in the background.
-const CACHE = 'timetrack-v1';
+const CACHE = 'timetrack-v2';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'core.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 

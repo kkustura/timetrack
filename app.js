@@ -92,7 +92,7 @@ function viewToday() {
   const d = C.dayStats(state, key, t);
   const cur = state.current;
   const before = C.balanceBefore(state, key, t);
-  const balance = before + d.diff;
+  const balance = before + (C.countsTowardBalance(d, key) ? d.diff : 0);
   const stale = cur && C.dateKey(cur.since) !== key;
 
   let html = `<h1>Today</h1><div class="sub">${esc(longDate(key))}${d.holiday ? ` · 🎉 ${esc(d.holiday)}` : ''}</div>`;
@@ -136,7 +136,7 @@ function viewToday() {
   html += `<section class="card"><div class="stats">
     <div class="stat"><div class="k">Pause</div><div class="v">${C.fmtDur(d.pause)}</div></div>
     <div class="stat"><div class="k">Today ±</div><div class="v ${signCls(d.diff)}">${C.fmtDur(d.diff, true)}</div></div>
-    <div class="stat"><div class="k">Overtime balance</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
+    <div class="stat"><div class="k">Overtime balance${C.countsTowardBalance(d, key) ? '' : ' (until yesterday)'}</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
     <div class="stat"><div class="k">${leave ? 'Target reached at' : 'First in · last out'}</div><div class="v">${leave ? C.timeOf(leave)
       : d.first ? `${C.timeOf(d.first)}–${d.running ? '…' : C.timeOf(d.last)}` : '–'}</div></div>
   </div>
@@ -220,7 +220,7 @@ function viewMonth() {
     if (d.holiday) parts.push(`<span class="muted small">🎉 ${esc(d.holiday)}</span>`);
     if (d.note) parts.push('<span class="muted small">📝</span>');
     if (d.warnings.length) parts.push('<span class="small">⚠️</span>');
-    const showDiff = d.key <= today && (d.target || d.credited);
+    const showDiff = C.countsTowardBalance(d, today) && (d.target || d.credited);
     return `<div class="li tap day ${off ? 'off' : ''} ${d.key === today ? 'today' : ''}" data-act="edit" data-key="${d.key}">
       <div class="d">${Number(d.key.slice(8))}<small>${WD_SHORT[wd]}</small></div>
       <div class="grow" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${parts.join('')}</div>

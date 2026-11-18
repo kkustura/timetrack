@@ -267,10 +267,19 @@ export function dayStats(state, key, now = Date.now()) {
   };
 }
 
+/** Past days always count; today only once you've clocked out and recorded something. */
+export function countsTowardBalance(d, today) {
+  return d.key < today || (d.key === today && !d.running && !d.onPause && d.credited > 0);
+}
+
 /** Overtime balance accumulated before `key` (exclusive). */
 export function balanceBefore(state, key, now = Date.now()) {
   let b = Number(state.settings.initialBalanceMin) || 0;
-  for (let k = state.settings.startDate; k < key; k = addDays(k, 1)) b += dayStats(state, k, now).diff;
+  const today = dateKey(now);
+  for (let k = state.settings.startDate; k < key && k <= today; k = addDays(k, 1)) {
+    const d = dayStats(state, k, now);
+    if (countsTowardBalance(d, today)) b += d.diff;
+  }
   return b;
 }
 
@@ -285,7 +294,7 @@ export function rangeTotals(state, from, to, today, now = Date.now()) {
       t.worked += d.worked;
       t.pause += d.pause;
       t.credited += d.credited;
-      t.diff += d.diff;
+      if (countsTowardBalance(d, today)) t.diff += d.diff;
     }
   }
   return t;

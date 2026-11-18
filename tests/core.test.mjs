@@ -156,3 +156,15 @@ test('pause is counted right after resuming', () => {
   C.resume(s, at(MON, '12:30'));
   assert.equal(C.dayStats(s, MON, at(MON, '12:30')).pause, 30);
 });
+
+test('today only counts toward balance after clocking out', () => {
+  const s = fresh();
+  s.settings.startDate = MON;
+  const noon = at(MON, '12:00');
+  assert.equal(C.balanceBefore(s, C.addDays(MON, 1), noon), 0); // nothing recorded yet
+  C.clockIn(s, at(MON, '08:00'));
+  assert.equal(C.balanceBefore(s, C.addDays(MON, 1), noon), 0); // still working
+  C.clockOut(s, at(MON, '15:00'));
+  assert.equal(C.balanceBefore(s, C.addDays(MON, 1), at(MON, '16:00')), -60);
+  assert.equal(C.balanceBefore(s, '2026-11-18', at('2026-11-18', '09:00')), -60 - 480); // Tue missed
+});

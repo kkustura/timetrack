@@ -37,7 +37,7 @@ export function defaultSettings(today = dateKey(Date.now())) {
 }
 
 export function emptyState(today) {
-  return { version: 1, settings: defaultSettings(today), days: {}, current: null };
+  return { version: 1, settings: defaultSettings(today), days: {}, current: null, meta: {} };
 }
 
 // ---------- date helpers ----------
@@ -431,5 +431,6 @@ export function normalizeState(raw, today) {
     settings: { ...defaultSettings(today), ...raw.settings },
     days: raw.days,
     current: raw.current || null,
+    meta: raw.meta && typeof raw.meta === 'object' ? raw.meta : {},
   };
 }

@@ -110,6 +110,16 @@ button:active { transform: scale(.98); }
 .day.off .d, .day.off .w { color: var(--muted); }
 .day .tag { white-space: normal; }
 .day.today { box-shadow: inset 3px 0 0 var(--accent); }
+.dayhead { display: flex; align-items: center; gap: 8px; margin: 8px 0 14px; }
+.dayhead h1 { margin: 0; }
+.dayhead .sub { margin: 2px 0 0; }
+.b-nav { width: 40px; height: 40px; padding: 0; border-radius: 50%; font-size: 24px; line-height: 1; flex: 0 0 auto; }
+.reminder { box-shadow: inset 0 0 0 2px var(--accent); }
+.slide-prev { animation: slidePrev .22s ease-out; }
+.slide-next { animation: slideNext .22s ease-out; }
+@keyframes slidePrev { from { transform: translateX(-28px); opacity: .25; } }
+@keyframes slideNext { from { transform: translateX(28px); opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .slide-prev, .slide-next { animation: none; } }
 .monthnav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .monthnav h1 { margin: 0; }
 

@@ -14,6 +14,9 @@ const t0 = new Date();
 let cursor = { y: t0.getFullYear(), m: t0.getMonth() };
 let vacYear = t0.getFullYear();
 let editSince = false;
+let dayView = null; // day shown on the Today tab (null = today)
+let slide = '';     // 'prev' | 'next' animation for the next render
+let vacFrom = null; // prefill for the vacation form
 let draft = null; // day editor working copy
 
 // ---------- persistence ----------
@@ -31,11 +34,18 @@ function load() {
 }
 function save() { localSet(STORAGE_KEY, JSON.stringify(state)); }
 
+function ensureMeta() {
+  state.meta ||= {};
+  if (!state.meta.firstUse) { state.meta.firstUse = Date.now(); save(); }
+}
+ensureMeta();
+
 navigator.storage?.persist?.();
 
 // ---------- helpers ----------
 
 const now = () => Date.now();
+const TIME_ATTRS = 'type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5"';
 const todayKey = () => C.dateKey(now());
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const signCls = (m) => (Math.abs(m) < 1 ? '' : m > 0 ? 'pos' : 'neg');
@@ -74,8 +84,8 @@ function toast(msg) {
 async function deliverFile(name, text, type) {
   const file = new File([text], name, { type });
   if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; }
-    catch (e) { if (e.name === 'AbortError') return; }
+    try { await navigator.share({ files: [file], title: name }); return true; }
+    catch (e) { if (e.name === 'AbortError') return false; }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(file);
@@ -83,6 +93,26 @@ async function deliverFile(name, text, type) {
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  return true;
+}
+
+function goDay(delta) {
+  const today = todayKey();
+  const next = C.addDays(dayView || today, delta);
+  dayView = next === today ? null : next;
+  editSince = false;
+  slide = delta < 0 ? 'prev' : 'next';
+  render();
+}
+
+async function exportBackup() {
+  const ok = await deliverFile(`timetracker-backup-${todayKey()}.json`, JSON.stringify(state, null, 1), 'application/json');
+  if (!ok) return;
+  state.meta.lastBackup = Date.now();
+  delete state.meta.backupSnoozeUntil;
+  save();
+  render();
+  toast('Backup created');
 }
 
 // ---------- views ----------
@@ -91,64 +121,124 @@ function render() {
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   const views = { today: viewToday, month: viewMonth, vacation: viewVacation, settings: viewSettings };
   $view.innerHTML = (views[tab] || viewToday)();
+  if (slide) {
+    $view.classList.remove('slide-prev', 'slide-next');
+    void $view.offsetWidth; // restart the animation
+    $view.classList.add(`slide-${slide}`);
+    slide = '';
+  }
+}
+
+const DAY = 24 * 60 * C.MIN;
+
+function backupReminder(t) {
+  const meta = state.meta;
+  if (!Object.keys(state.days).length) return '';
+  const ref = meta.lastBackup || meta.firstUse || t;
+  if (t - ref < 30 * DAY || (meta.backupSnoozeUntil || 0) > t) return '';
+  const msg = meta.lastBackup
+    ? `Your last backup was ${Math.floor((t - meta.lastBackup) / DAY)} days ago.`
+    : "You haven't saved a backup yet.";
+  return `<div class="card reminder">
+    <b>📦 Time for a backup</b>
+    <div class="small muted" style="margin:4px 0 10px">${msg} Save one to iCloud Drive so your data is safe if something happens to this phone.</div>
+    <div class="row"><button class="b-small b-accent" data-act="backup-now">Back up now</button>
+    <button class="b-small" data-act="backup-later">Remind me in a week</button></div>
+  </div>`;
+}
+
+function dayTitle(key, today) {
+  if (key === today) return 'Today';
+  if (key === C.addDays(today, -1)) return 'Yesterday';
+  if (key === C.addDays(today, 1)) return 'Tomorrow';
+  return C.parseKey(key).toLocaleDateString(undefined, { weekday: 'long' });
 }
 
 function viewToday() {
   const t = now();
-  const key = todayKey();
+  const today = todayKey();
+  const key = dayView && dayView !== today ? dayView : today;
+  const isToday = key === today;
+  const isPast = key < today;
   const d = C.dayStats(state, key, t);
   const cur = state.current;
   const before = C.balanceBefore(state, key, t);
-  const balance = before + (C.countsTowardBalance(d, key) ? d.diff : 0);
-  const stale = cur && C.dateKey(cur.since) !== key;
+  const counts = C.countsTowardBalance(d, today);
+  const balance = before + (counts ? d.diff : 0);
+  const stale = isToday && cur && C.dateKey(cur.since) !== key;
 
-  let html = `<h1>Today</h1><div class="sub">${esc(longDate(key))}${d.holiday ? ` · 🎉 ${esc(d.holiday)}` : ''}</div>`;
+  let html = `<div class="dayhead">
+    <button class="b-nav" data-act="day" data-d="-1" aria-label="Previous day">‹</button>
+    <div class="grow"><h1>${dayTitle(key, today)}</h1>
+      <div class="sub">${esc(longDate(key))}${d.holiday ? ` · 🎉 ${esc(d.holiday)}` : ''}</div></div>
+    ${isToday ? '' : '<button class="b-small b-accent" data-act="day-today">Today</button>'}
+    <button class="b-nav" data-act="day" data-d="1" aria-label="Next day">›</button>
+  </div>`;
+
+  if (isToday) html += backupReminder(t);
 
   if (stale) {
     const k = C.dateKey(cur.since);
     html += `<div class="warn">
       <b>Still ${cur.mode === 'work' ? 'clocked in' : 'on pause'} since ${esc(shortDate(k))}, ${C.timeOf(cur.since)}.</b> Forgot to clock out?
       <div class="row" style="margin-top:8px">
-        ${cur.mode === 'work' ? `<span>Clock out at</span><input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" id="staleOut" value="${C.timeOf(Math.max(cur.since, C.atTime(k, '16:30')))}">` : ''}
+        ${cur.mode === 'work' ? `<span>Clock out at</span><input ${TIME_ATTRS} id="staleOut" value="${C.timeOf(Math.max(cur.since, C.atTime(k, '16:30')))}">` : ''}
         <button class="b-small b-accent" data-act="fix-stale">${cur.mode === 'work' ? 'Save' : 'End pause'}</button>
       </div></div>`;
   }
 
-  // status card
-  const mode = stale ? null : cur?.mode;
-  const pill = mode === 'work' ? ['st-work', `Working since ${C.timeOf(cur.since)}`]
-    : mode === 'pause' ? ['st-pause', `On pause since ${C.timeOf(cur.since)}`]
-    : ['', d.intervals.length ? `Clocked out at ${C.timeOf(d.last)}` : 'Not clocked in'];
-  html += `<section class="card">
-    <div class="spread">
-      <span class="status-pill ${pill[0]}"><span class="dot"></span>${pill[1]}</span>
-      ${mode ? `<button class="b-link b-small" data-act="toggle-since">${editSince ? 'Done' : 'Adjust'}</button>` : ''}
-    </div>
-    ${mode && editSince ? `<div class="row" style="margin-top:10px"><span class="muted small">${mode === 'work' ? 'Started' : 'Pause started'} at</span>
-      <input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" id="sinceInput" value="${C.timeOf(cur.since)}"></div>` : ''}
-    <div class="big" id="liveClock">${C.fmtClock(d.worked)}</div>
-    <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${d.apptCredit || d.absenceCredit ? ` · +${C.fmtDur(d.absenceCredit)} absence credit` : ''}</div>
-    <div class="btns">
-      ${!cur || stale ? `<button class="b-work full" data-act="in" ${stale ? 'disabled style="opacity:.4"' : ''}>▶︎ Clock in</button>` : ''}
-      ${mode === 'work' ? `<button class="b-pause" data-act="pause">⏸ Pause</button><button class="b-stop" data-act="out">■ Clock out</button>` : ''}
-      ${mode === 'pause' ? `<button class="b-work" data-act="resume">▶︎ Resume</button><button class="b-stop" data-act="out">■ Clock out</button>` : ''}
-    </div>
-  </section>`;
+  if (isToday) {
+    // status card with the clock buttons
+    const mode = stale ? null : cur?.mode;
+    const pill = mode === 'work' ? ['st-work', `Working since ${C.timeOf(cur.since)}`]
+      : mode === 'pause' ? ['st-pause', `On pause since ${C.timeOf(cur.since)}`]
+      : ['', d.intervals.length ? `Clocked out at ${C.timeOf(d.last)}` : 'Not clocked in'];
+    html += `<section class="card">
+      <div class="spread">
+        <span class="status-pill ${pill[0]}"><span class="dot"></span>${pill[1]}</span>
+        ${mode ? `<button class="b-link b-small" data-act="toggle-since">${editSince ? 'Done' : 'Adjust'}</button>` : ''}
+      </div>
+      ${mode && editSince ? `<div class="row" style="margin-top:10px"><span class="muted small">${mode === 'work' ? 'Started' : 'Pause started'} at</span>
+        <input ${TIME_ATTRS} id="sinceInput" value="${C.timeOf(cur.since)}"></div>` : ''}
+      <div class="big" id="liveClock">${C.fmtClock(d.worked)}</div>
+      <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${d.absenceCredit ? ` · +${C.fmtDur(d.absenceCredit)} absence credit` : ''}</div>
+      <div class="btns">
+        ${!cur || stale ? `<button class="b-work full" data-act="in" ${stale ? 'disabled style="opacity:.4"' : ''}>▶︎ Clock in</button>` : ''}
+        ${mode === 'work' ? `<button class="b-pause" data-act="pause">⏸ Pause</button><button class="b-stop" data-act="out">■ Clock out</button>` : ''}
+        ${mode === 'pause' ? `<button class="b-work" data-act="resume">▶︎ Resume</button><button class="b-stop" data-act="out">■ Clock out</button>` : ''}
+      </div>
+    </section>`;
+  } else {
+    // summary card for another day
+    html += `<section class="card">
+      <div class="big">${C.fmtDur(d.credited)}</div>
+      <div class="muted small">${isPast ? 'h credited' : 'h planned'}${d.target ? ` of ${C.fmtDur(d.target)} h target` : ' · no target (day off)'}${d.absenceCredit && d.worked ? ` · ${C.fmtDur(d.worked)} worked + ${C.fmtDur(d.absenceCredit)} absence credit` : ''}</div>
+    </section>`;
+  }
 
   d.warnings.forEach((w) => { html += `<div class="warn">⚠️ ${esc(w)}</div>`; });
 
   // stats
-  const leave = C.leaveAt(state, d, d.target, t);
-  const leaveZero = C.leaveAt(state, d, d.target - before, t);
-  html += `<section class="card"><div class="stats">
-    <div class="stat"><div class="k">Pause</div><div class="v">${C.fmtDur(d.pause)}</div></div>
-    <div class="stat"><div class="k">Today ±</div><div class="v ${signCls(d.diff)}">${C.fmtDur(d.diff, true)}</div></div>
-    <div class="stat"><div class="k">Overtime balance${C.countsTowardBalance(d, key) ? '' : ' (until yesterday)'}</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
-    <div class="stat"><div class="k">${leave ? 'Target reached at' : 'First in · last out'}</div><div class="v">${leave ? C.timeOf(leave)
-      : d.first ? `${C.timeOf(d.first)}–${d.running ? '…' : C.timeOf(d.last)}` : '–'}</div></div>
-  </div>
-  ${leaveZero && C.dateKey(leaveZero) === key && Math.abs(leaveZero - (leave || 0)) > C.MIN ? `<div class="muted small" style="margin-top:10px">Leave at ${C.timeOf(leaveZero)} to bring your overall balance to zero.</div>` : ''}
-  </section>`;
+  if (isToday) {
+    const leave = C.leaveAt(state, d, d.target, t);
+    const leaveZero = C.leaveAt(state, d, d.target - before, t);
+    html += `<section class="card"><div class="stats">
+      <div class="stat"><div class="k">Pause</div><div class="v">${C.fmtDur(d.pause)}</div></div>
+      <div class="stat"><div class="k">Today ±</div><div class="v ${signCls(d.diff)}">${C.fmtDur(d.diff, true)}</div></div>
+      <div class="stat"><div class="k">Overtime balance${counts ? '' : ' (until yesterday)'}</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
+      <div class="stat"><div class="k">${leave ? 'Target reached at' : 'First in · last out'}</div><div class="v">${leave ? C.timeOf(leave)
+        : d.first ? `${C.timeOf(d.first)}–${d.running ? '…' : C.timeOf(d.last)}` : '–'}</div></div>
+    </div>
+    ${leaveZero && C.dateKey(leaveZero) === key && Math.abs(leaveZero - (leave || 0)) > C.MIN ? `<div class="muted small" style="margin-top:10px">Leave at ${C.timeOf(leaveZero)} to bring your overall balance to zero.</div>` : ''}
+    </section>`;
+  } else if (isPast) {
+    html += `<section class="card"><div class="stats">
+      <div class="stat"><div class="k">Pause</div><div class="v">${C.fmtDur(d.pause)}</div></div>
+      <div class="stat"><div class="k">Day ±</div><div class="v ${signCls(d.diff)}">${counts ? C.fmtDur(d.diff, true) : '–'}</div></div>
+      <div class="stat"><div class="k">Balance at end of day</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
+      <div class="stat"><div class="k">First in · last out</div><div class="v">${d.first ? `${C.timeOf(d.first)}–${d.running ? '…' : C.timeOf(d.last)}` : '–'}</div></div>
+    </div></section>`;
+  }
 
   // timeline
   html += `<h2>Entries</h2><div class="list">`;
@@ -163,27 +253,28 @@ function viewToday() {
   if (d.onPause && !stale) rows.push(`<div class="li"><span class="tag pause">Pause</span><span class="grow num">${C.timeOf(cur.since)}–now</span><span class="num muted">${C.fmtDur((t - cur.since) / C.MIN)}</span></div>`);
   d.absences.forEach((a) => rows.push(`<div class="li"><span class="grow">${esc(absLabel(a))}${a.note ? ` <span class="muted small">· ${esc(a.note)}</span>` : ''}</span></div>`));
   if (d.note) rows.push(`<div class="li muted small">📝 ${esc(d.note)}</div>`);
-  if (!rows.length) rows.push(`<div class="li muted">Nothing recorded yet.</div>`);
-  html += rows.join('') + `<div class="li"><button class="b-link" data-act="edit" data-key="${key}">Edit today / add appointment…</button></div></div>`;
+  if (!rows.length) rows.push(`<div class="li muted">Nothing recorded${isToday ? ' yet' : ''}.</div>`);
+  html += rows.join('') + `<div class="li"><button class="b-link" data-act="edit" data-key="${key}">${isToday ? 'Edit today' : 'Edit this day'} / add appointment…</button></div></div>`;
 
-  // quick add
+  // quick add (for the day shown)
   html += `<div class="row" style="flex-wrap:wrap">
-    <button class="b-small" data-act="quick" data-type="doctor">🩺 Doctor</button>
-    <button class="b-small" data-act="quick" data-type="appointment">📋 Appointment</button>
-    <button class="b-small" data-act="quick" data-type="sick">🤒 Sick</button>
-    <button class="b-small" data-act="quick" data-type="vacation">🌴 Vacation</button>
+    <button class="b-small" data-act="quick" data-type="doctor" data-key="${key}">🩺 Doctor</button>
+    <button class="b-small" data-act="quick" data-type="appointment" data-key="${key}">📋 Appointment</button>
+    <button class="b-small" data-act="quick" data-type="sick" data-key="${key}">🤒 Sick</button>
+    <button class="b-small" data-act="quick" data-type="vacation" data-key="${key}">🌴 Vacation</button>
   </div>`;
 
-  // this week
-  const wd = C.weekday(key);
-  const monday = C.addDays(key, -((wd + 6) % 7));
-  const wk = C.rangeTotals(state, monday, C.addDays(monday, 6), key, t);
+  // week of the day shown
+  const monday = C.addDays(key, -((C.weekday(key) + 6) % 7));
+  const sunday = C.addDays(monday, 6);
+  const wk = C.rangeTotals(state, monday, sunday, today, t);
   const scale = Math.max(480, ...wk.days.map((x) => Math.max(x.target, x.credited)));
-  html += `<h2>This week</h2><section class="card">
+  const thisWeek = today >= monday && today <= sunday;
+  html += `<h2>${thisWeek ? 'This week' : `Week of ${esc(shortDate(monday))}`}</h2><section class="card">
     <div class="spread"><span><b class="num">${C.fmtDur(wk.credited)}</b> <span class="muted">of ${C.fmtDur(wk.target)} h</span></span>
     <span class="num ${signCls(wk.diff)}">${C.fmtDur(wk.diff, true)}</span></div>
     <div class="week">${wk.days.map((x) => `
-      <div class="wk ${x.key === key ? 'today' : ''}" data-act="edit" data-key="${x.key}">
+      <div class="wk ${x.key === key ? 'today' : ''}" data-act="goto-day" data-key="${x.key}">
         <div class="bar">
           <i style="height:${(x.worked / scale) * 100}%"></i>
           ${x.absenceCredit ? `<i class="abs" style="height:${(x.absenceCredit / scale) * 100}%;position:absolute;bottom:${(x.worked / scale) * 100}%"></i>` : ''}
@@ -191,7 +282,8 @@ function viewToday() {
         </div>
         <span>${WD_SHORT[C.weekday(x.key)].slice(0, 2)}</span>
       </div>`).join('')}</div>
-  </section>`;
+  </section>
+  <p class="muted small" style="text-align:center">Swipe left for the previous day, right for the next.</p>`;
   return html;
 }
 
@@ -268,8 +360,8 @@ function viewVacation() {
 
   <h2>Add vacation</h2>
   <div class="list">
-    <label class="field inline"><span class="k">From</span><input type="date" id="vFrom" value="${today}"></label>
-    <label class="field inline"><span class="k">To</span><input type="date" id="vTo" value="${today}"></label>
+    <label class="field inline"><span class="k">From</span><input type="date" id="vFrom" value="${vacFrom || today}"></label>
+    <label class="field inline"><span class="k">To</span><input type="date" id="vTo" value="${vacFrom || today}"></label>
     <label class="field inline"><span class="k">Half day</span><input type="checkbox" id="vHalf"></label>
     <div class="li"><button class="b-accent grow" data-act="add-vac">Add vacation</button></div>
   </div>
@@ -500,10 +592,22 @@ const actions = {
   edit(el) { openEditor(el.dataset.key); return false; },
   quick(el) {
     const type = el.dataset.type;
-    if (type === 'vacation') { tab = 'vacation'; return; }
-    openEditor(todayKey(), type);
+    const key = el.dataset.key || todayKey();
+    if (type === 'vacation') { tab = 'vacation'; vacFrom = key; vacYear = Number(key.slice(0, 4)); return; }
+    openEditor(key, type);
     return false;
   },
+  day(el) { goDay(Number(el.dataset.d)); return false; },
+  'day-today'() { const back = dayView > todayKey(); dayView = null; slide = back ? 'prev' : 'next'; },
+  'goto-day'(el) {
+    const k = el.dataset.key;
+    const from = dayView || todayKey();
+    if (k === from) return false;
+    slide = k < from ? 'prev' : 'next';
+    dayView = k === todayKey() ? null : k;
+  },
+  'backup-now'() { exportBackup(); return false; },
+  'backup-later'() { state.meta.backupSnoozeUntil = Date.now() + 7 * DAY; toast("OK, I'll remind you in a week"); },
   month(el) {
     const d = new Date(cursor.y, cursor.m + Number(el.dataset.d), 1);
     cursor = { y: d.getFullYear(), m: d.getMonth() };
@@ -531,10 +635,7 @@ const actions = {
     deliverFile(`timesheet-${cursor.y}-${C.pad(cursor.m + 1)}.csv`, C.toCSV(state, first, last, todayKey()), 'text/csv');
     return false;
   },
-  export() {
-    deliverFile(`timetracker-backup-${todayKey()}.json`, JSON.stringify(state, null, 1), 'application/json');
-    return false;
-  },
+  export() { exportBackup(); return false; },
   import() { document.getElementById('importFile').click(); return false; },
   reset() {
     if (!confirm('Delete ALL your time entries and settings on this device? This cannot be undone.')) return false;
@@ -555,7 +656,12 @@ const actions = {
 
 document.addEventListener('click', (e) => {
   const tabBtn = e.target.closest('[data-tab]');
-  if (tabBtn) { tab = tabBtn.dataset.tab; localSet('timetrack.tab', tab); render(); window.scrollTo(0, 0); return; }
+  if (tabBtn) {
+    tab = tabBtn.dataset.tab;
+    if (tab === 'today') dayView = null;
+    if (tab !== 'vacation') vacFrom = null;
+    localSet('timetrack.tab', tab); render(); window.scrollTo(0, 0); return;
+  }
   const el = e.target.closest('[data-act]');
   if (!el || !actions[el.dataset.act]) return;
   // false = no state change (no save/render needed)
@@ -581,7 +687,7 @@ document.addEventListener('change', (e) => {
       try {
         const next = C.normalizeState(JSON.parse(text), todayKey());
         if (!confirm('Replace all data on this device with the backup?')) return;
-        state = next; save(); render(); toast('Backup imported');
+        state = next; ensureMeta(); state.meta.lastBackup = Date.now(); save(); render(); toast('Backup imported');
       } catch (err) { toast(err.message || 'Could not read that file'); }
     });
     return;
@@ -617,13 +723,37 @@ document.addEventListener('change', (e) => {
   if (draft && el.dataset.a) draft.absences[el.dataset.a][el.dataset.f] = hm;
 }, true);
 
+// ---------- swipe / arrow keys between days ----------
+// Swipe left → previous day, swipe right → next day (as requested).
+let touch = null;
+$view.addEventListener('touchstart', (e) => {
+  touch = tab === 'today' && e.touches.length === 1
+    ? { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now() } : null;
+}, { passive: true });
+$view.addEventListener('touchend', (e) => {
+  if (!touch) return;
+  const p = e.changedTouches[0];
+  const dx = p.clientX - touch.x, dy = p.clientY - touch.y;
+  const quick = Date.now() - touch.at < 800;
+  touch = null;
+  if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  if (e.target.closest('input, textarea, select')) return;
+  goDay(dx < 0 ? -1 : 1);
+}, { passive: true });
+document.addEventListener('keydown', (e) => {
+  if (tab !== 'today' || $dlg.open || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (document.activeElement?.matches('input, textarea, select')) return;
+  if (e.key === 'ArrowLeft') goDay(-1);
+  else if (e.key === 'ArrowRight') goDay(1);
+});
+
 // ---------- live updates ----------
 
 // Update the running clock every second; re-render the whole screen once a minute
 // (not every second, so taps on buttons are never swallowed by a re-render).
 let lastMinute = Math.floor(Date.now() / C.MIN);
 function tick() {
-  if (tab !== 'today' || $dlg.open || document.hidden) return;
+  if (tab !== 'today' || dayView || $dlg.open || document.hidden) return;
   const minute = Math.floor(Date.now() / C.MIN);
   const active = document.activeElement;
   const typing = active && $view.contains(active) && active.matches('input, select, textarea');
@@ -635,7 +765,7 @@ function tick() {
 }
 setInterval(tick, 1000);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') { state = load(); render(); }
+  if (document.visibilityState === 'visible') { state = load(); ensureMeta(); render(); }
 });
 window.addEventListener('storage', (e) => { if (e.key === STORAGE_KEY) { state = load(); render(); } });
 

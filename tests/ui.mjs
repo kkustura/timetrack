@@ -83,6 +83,59 @@ for (const scheme of ['light', 'dark']) {
   await page.click('[data-act="dlg-add-work"]');
   await page.click('[data-act="dlg-cancel"]');
 
+  // day navigation: arrows, buttons, swipe
+  await page.click('[data-tab="today"]');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.textContent('h1'), 'Yesterday');
+  await page.click('[data-act="day"][data-d="-1"]');
+  assert.equal(await page.textContent('h1'), 'Saturday');
+  await page.click('[data-act="day-today"]');
+  assert.equal(await page.textContent('h1'), 'Today');
+  const swipe = (x0, x1) => page.evaluate(([a, b]) => {
+    const el = document.getElementById('view');
+    const mk = (type, x) => {
+      // plain Event carrying touch coordinates (WebKit on macOS can't construct TouchEvent)
+      const t = { identifier: 1, target: el, clientX: x, clientY: 300 };
+      const ev = new Event(type, { bubbles: true });
+      Object.defineProperty(ev, 'touches', { value: type === 'touchend' ? [] : [t] });
+      Object.defineProperty(ev, 'changedTouches', { value: [t] });
+      el.querySelector('.card').dispatchEvent(ev);
+    };
+    mk('touchstart', a); mk('touchend', b);
+  }, [x0, x1]);
+  let touchOk = true;
+  try { await swipe(300, 100); } catch { touchOk = false; }
+  if (touchOk) {
+    assert.equal(await page.textContent('h1'), 'Yesterday', 'swipe left → previous day');
+    await swipe(100, 300);
+    assert.equal(await page.textContent('h1'), 'Today', 'swipe right → next day');
+  } else console.log('(touch events not constructible in this WebKit build; swipe not tested)');
+  // past day shows summary + doctor visit was today, yesterday (Sunday) is empty
+  await page.keyboard.press('ArrowLeft');
+  assert.match(await page.textContent('#view'), /Nothing recorded\./);
+  await page.click('[data-tab="today"]');
+  if (scheme === 'light') {
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    await page.screenshot({ path: 'shots/pastday-light.png', fullPage: true });
+    await page.click('[data-act="day-today"]');
+  }
+
+  // backup reminder after 30 days without backup
+  assert.doesNotMatch(await page.textContent('#view'), /Time for a backup/);
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('timetrack.v1'));
+    s.meta.firstUse -= 31 * 864e5;
+    localStorage.setItem('timetrack.v1', JSON.stringify(s));
+  });
+  await page.reload();
+  await page.click('[data-tab="today"]');
+  assert.match(await page.textContent('#view'), /Time for a backup/);
+  if (scheme === 'light') await page.screenshot({ path: 'shots/reminder-light.png' });
+  await page.click('[data-act="backup-later"]');
+  assert.doesNotMatch(await page.textContent('#view'), /Time for a backup/);
+
   // persistence across reload
   await page.reload();
   await page.click('[data-tab="today"]');

@@ -164,7 +164,7 @@ function fridayNote(key, d, t) {
   } else {
     const leave = C.leaveAt(state, d, goal, t);
     msg = leave && C.dateKey(leave) === key
-      ? `Weekly balance – you can leave at ${C.timeOf(leave)}! 🏖️`
+      ? `Weekly balance – you can leave at ${C.timeOf(leave)} 🏖️`
       : `Weekly balance – ${C.fmtDur(still)} h to go today 🏖️`;
   }
   return `<div class="friday-note">${msg}</div>`;

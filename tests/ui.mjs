@@ -43,7 +43,10 @@ for (const scheme of ['light', 'dark']) {
   await page.clock.fastForward('03:58:00'); // 12:00
   await page.click('[data-act="pause"]');
   await page.clock.fastForward('00:31:00'); // 12:31
+  assert.match(await page.textContent('#livePause'), /^0:3[01]:\d\d$/);
+  if (scheme === 'light') await page.screenshot({ path: 'shots/today-pause-light.png' });
   await page.click('[data-act="resume"]');
+  assert.equal(await page.$('#livePause'), null);
   await page.clock.fastForward('02:00:00'); // 14:31
   await page.screenshot({ path: `shots/today-working-${scheme}.png`, fullPage: true });
   const clock = await page.textContent('#liveClock');
@@ -140,6 +143,36 @@ for (const scheme of ['light', 'dark']) {
   await page.reload();
   await page.click('[data-tab="today"]');
   assert.match(await page.textContent('#view'), /Doctor's appointment 15:00–17:30/);
+  await ctx.close();
+}
+
+// Friday: how much is still needed to finish the week at zero
+{
+  const ctx = await browser.newContext({ ...devices['iPhone 15'], colorScheme: 'light' });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.clock.install({ time: new Date('2026-11-20T08:00:00') }); // Friday
+  await page.goto(URL);
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('timetrack.v1'));
+    s.settings.startDate = '2026-11-16';
+    s.settings.weeklyHours = 38.5;
+    for (const d of ['16', '17', '18', '19']) {
+      s.days[`2026-11-${d}`] = { work: [{ start: new Date(`2026-11-${d}T08:00`).getTime(), end: new Date(`2026-11-${d}T12:00`).getTime() },
+        { start: new Date(`2026-11-${d}T12:30`).getTime(), end: new Date(`2026-11-${d}T17:00`).getTime() }] };
+    }
+    localStorage.setItem('timetrack.v1', JSON.stringify(s));
+  });
+  await page.reload();
+  await page.click('[data-tab="today"]');
+  let note = (await page.textContent('.friday-note')).replace(/\s+/g, ' ');
+  assert.match(note, /34:00 of 38:30 h\. 4:30 h still to go today\.$/, note);
+  await page.click('[data-act="in"]');
+  note = (await page.textContent('.friday-note')).replace(/\s+/g, ' ');
+  assert.match(note, /you can leave at 12:30/, note);
+  await page.screenshot({ path: 'shots/friday-light.png' });
+  await page.keyboard.press('ArrowLeft'); // Thursday: no note
+  assert.equal(await page.$('.friday-note'), null);
   await ctx.close();
 }
 

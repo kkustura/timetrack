@@ -67,6 +67,14 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacin
 .st-pause .dot { background: var(--pause); }
 @keyframes pulse { 50% { opacity: .35; } }
 .big { font-size: 52px; font-weight: 700; letter-spacing: -0.03em; margin: 10px 0 2px; font-variant-numeric: tabular-nums; }
+.timers { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.pause-timer { font-size: 26px; font-weight: 300; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.friday-note { font-size: 14px; font-weight: 300; color: var(--muted); margin: -4px 4px 10px; }
+.stats.three { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stats.three .v { font-size: 20px; }
+.nowrap { white-space: nowrap; }
+.quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.quick button { padding: 8px 0; font-size: 13px; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
 .btns .full { grid-column: 1 / -1; }
 

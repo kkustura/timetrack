@@ -147,6 +147,28 @@ function backupReminder(t) {
   </div>`;
 }
 
+/** On the last working day of the week: what's still needed to finish this week at zero. */
+function fridayNote(key, d, t) {
+  const work = state.settings.workdays;
+  if (!work.length) return '';
+  const lastWorkday = [1, 2, 3, 4, 5, 6, 0].filter((x) => work.includes(x)).pop();
+  if (C.weekday(key) !== lastWorkday) return '';
+  const monday = C.addDays(key, -((C.weekday(key) + 6) % 7));
+  const wk = C.rangeTotals(state, monday, C.addDays(monday, 6), key, t);
+  if (!wk.target) return '';
+  const goal = wk.target - (wk.credited - d.credited); // what today must credit
+  const still = goal - d.credited;
+  let msg;
+  if (still <= 0) {
+    msg = `This week's ${C.fmtDur(wk.target)} h are done (${C.fmtDur(-still, true)}). Have a nice weekend!`;
+  } else {
+    const leave = C.leaveAt(state, d, goal, t);
+    msg = `This week: ${C.fmtDur(wk.credited)} of ${C.fmtDur(wk.target)} h. ${C.fmtDur(still)} h still to go today`
+      + (leave && C.dateKey(leave) === key ? ` — you can leave at ${C.timeOf(leave)}.` : '.');
+  }
+  return `<div class="friday-note">${msg}</div>`;
+}
+
 function dayTitle(key, today) {
   if (key === today) return 'Today';
   if (key === C.addDays(today, -1)) return 'Yesterday';
@@ -187,6 +209,10 @@ function viewToday() {
       </div></div>`;
   }
 
+  const leave = isToday ? C.leaveAt(state, d, d.target, t) : null;
+
+  if (isToday) html += fridayNote(key, d, t);
+
   if (isToday) {
     // status card with the clock buttons
     const mode = stale ? null : cur?.mode;
@@ -200,8 +226,11 @@ function viewToday() {
       </div>
       ${mode && editSince ? `<div class="row" style="margin-top:10px"><span class="muted small">${mode === 'work' ? 'Started' : 'Pause started'} at</span>
         <input ${TIME_ATTRS} id="sinceInput" value="${C.timeOf(cur.since)}"></div>` : ''}
-      <div class="big" id="liveClock">${C.fmtClock(d.worked)}</div>
-      <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${d.absenceCredit ? ` · +${C.fmtDur(d.absenceCredit)} absence credit` : ''}</div>
+      <div class="timers">
+        <div class="big" id="liveClock">${C.fmtClock(d.worked)}</div>
+        ${mode === 'pause' ? `<div class="pause-timer" title="Current pause">⏸ <span id="livePause">${C.fmtClock((t - cur.since) / C.MIN)}</span></div>` : ''}
+      </div>
+      <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${d.absenceCredit ? ` · +${C.fmtDur(d.absenceCredit)} absence credit` : ''}${leave ? `<br>(target reached at ${C.timeOf(leave)})` : ''}</div>
       <div class="btns">
         ${!cur || stale ? `<button class="b-work full" data-act="in" ${stale ? 'disabled style="opacity:.4"' : ''}>▶︎ Clock in</button>` : ''}
         ${mode === 'work' ? `<button class="b-pause" data-act="pause">⏸ Pause</button><button class="b-stop" data-act="out">■ Clock out</button>` : ''}
@@ -220,14 +249,11 @@ function viewToday() {
 
   // stats
   if (isToday) {
-    const leave = C.leaveAt(state, d, d.target, t);
     const leaveZero = C.leaveAt(state, d, d.target - before, t);
-    html += `<section class="card"><div class="stats">
+    html += `<section class="card"><div class="stats three">
       <div class="stat"><div class="k">Pause</div><div class="v">${C.fmtDur(d.pause)}</div></div>
       <div class="stat"><div class="k">Today ±</div><div class="v ${signCls(d.diff)}">${C.fmtDur(d.diff, true)}</div></div>
-      <div class="stat"><div class="k">Overtime balance${counts ? '' : ' (until yesterday)'}</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
-      <div class="stat"><div class="k">${leave ? 'Target reached at' : 'First in · last out'}</div><div class="v">${leave ? C.timeOf(leave)
-        : d.first ? `${C.timeOf(d.first)}–${d.running ? '…' : C.timeOf(d.last)}` : '–'}</div></div>
+      <div class="stat"><div class="k">Overtime${counts ? '' : ' <span class="nowrap">(until yesterday)</span>'}</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
     </div>
     ${leaveZero && C.dateKey(leaveZero) === key && Math.abs(leaveZero - (leave || 0)) > C.MIN ? `<div class="muted small" style="margin-top:10px">Leave at ${C.timeOf(leaveZero)} to bring your overall balance to zero.</div>` : ''}
     </section>`;
@@ -257,9 +283,9 @@ function viewToday() {
   html += rows.join('') + `<div class="li"><button class="b-link" data-act="edit" data-key="${key}">${isToday ? 'Edit today' : 'Edit this day'} / add appointment…</button></div></div>`;
 
   // quick add (for the day shown)
-  html += `<div class="row" style="flex-wrap:wrap">
+  html += `<div class="quick">
     <button class="b-small" data-act="quick" data-type="doctor" data-key="${key}">🩺 Doctor</button>
-    <button class="b-small" data-act="quick" data-type="appointment" data-key="${key}">📋 Appointment</button>
+    <button class="b-small" data-act="quick" data-type="appointment" data-key="${key}" aria-label="Other appointment">📋 Appt.</button>
     <button class="b-small" data-act="quick" data-type="sick" data-key="${key}">🤒 Sick</button>
     <button class="b-small" data-act="quick" data-type="vacation" data-key="${key}">🌴 Vacation</button>
   </div>`;
@@ -761,6 +787,8 @@ function tick() {
   if (state.current) {
     const clock = document.getElementById('liveClock');
     if (clock) clock.textContent = C.fmtClock(C.dayStats(state, todayKey(), now()).worked);
+    const pause = document.getElementById('livePause');
+    if (pause && state.current.mode === 'pause') pause.textContent = C.fmtClock((now() - state.current.since) / C.MIN);
   }
 }
 setInterval(tick, 1000);

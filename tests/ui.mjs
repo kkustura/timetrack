@@ -67,6 +67,8 @@ for (const scheme of ['light', 'dark']) {
   assert.match(txt, /Clocked out at 15:00/);
   assert.match(txt.replace(/\s+/g, ' '), /Today ±\s*−0:33/);
   await page.screenshot({ path: `shots/today-done-${scheme}.png`, fullPage: true });
+  assert.match(txt.replace(/\s+/g, ' '), /Week ±/);
+  assert.doesNotMatch(txt, /Overtime/);
 
   // vacation
   await page.click('[data-tab="vacation"]');
@@ -82,6 +84,7 @@ for (const scheme of ['light', 'dark']) {
   // month
   await page.click('[data-tab="month"]');
   await page.screenshot({ path: `shots/month-${scheme}.png`, fullPage: true });
+  assert.match(await page.textContent('#view'), /Overtime balance since/);
   await page.click('.cal-cell.today');
   await page.click('[data-act="dlg-add-work"]');
   await page.click('[data-act="dlg-cancel"]');

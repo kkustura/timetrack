@@ -235,7 +235,8 @@ export function dayStats(state, key, now = Date.now()) {
 
   const warnings = [];
   let pauseDeducted = 0;
-  if (s.pauseRule !== 'off' && worked > s.minPauseAfterMin && pause < s.minPauseMin) {
+  // shortfalls under a minute (e.g. a 29:40 pause) are ignored
+  if (s.pauseRule !== 'off' && worked > s.minPauseAfterMin && s.minPauseMin - pause >= 1) {
     const shortfall = Math.min(s.minPauseMin - pause, worked - s.minPauseAfterMin);
     const after = fmtDur(s.minPauseAfterMin);
     if (s.pauseRule === 'deduct') {
@@ -330,7 +331,7 @@ export function leaveAt(state, stats, goalMin, now) {
   const worked = stats.worked + stats.pauseDeducted; // undo any deduction; it is re-added below
   let remaining = goalMin - (worked + stats.absenceCredit);
   if (remaining <= 0) return null;
-  if (s.pauseRule !== 'off' && stats.pause < s.minPauseMin && worked + remaining > s.minPauseAfterMin) {
+  if (s.pauseRule !== 'off' && s.minPauseMin - stats.pause >= 1 && worked + remaining > s.minPauseAfterMin) {
     remaining += Math.min(s.minPauseMin - stats.pause, worked + remaining - s.minPauseAfterMin);
   }
   return now + remaining * MIN;

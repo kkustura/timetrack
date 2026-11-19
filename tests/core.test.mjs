@@ -239,3 +239,17 @@ test('automatic pause on clock-out', () => {
   C.clockIn(s, at(MON, '08:00'));
   assert.equal(C.clockOut(s, at(MON, '16:30')), false);
 });
+
+test('pause shortfall under a minute is ignored', () => {
+  const s = fresh();
+  s.settings.pauseRule = 'deduct';
+  s.days[MON] = { work: [
+    { start: at(MON, '08:00'), end: at(MON, '12:00') + 20e3 },   // 12:00:20
+    { start: at(MON, '12:30'), end: at(MON, '16:30') },          // pause 29:40
+  ] };
+  const d = C.dayStats(s, MON);
+  assert.equal(d.warnings.length, 0);
+  assert.equal(d.pauseDeducted, 0);
+  s.days[MON].work[1].start = at(MON, '12:20');                  // pause ~20 min → real shortfall
+  assert.equal(C.dayStats(s, MON).warnings.length, 1);
+});

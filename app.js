@@ -192,9 +192,10 @@ function viewToday() {
   const isPast = key < today;
   const d = C.dayStats(state, key, t);
   const cur = state.current;
-  const before = C.balanceBefore(state, key, t);
   const counts = C.countsTowardBalance(d, today, state.settings.startDate);
-  const balance = before + (counts ? d.diff : 0);
+  const monday = C.addDays(key, -((C.weekday(key) + 6) % 7));
+  const sunday = C.addDays(monday, 6);
+  const wk = C.rangeTotals(state, monday, sunday, today, t);
   const stale = isToday && cur && C.dateKey(cur.since) !== key;
 
   let html = `<div class="dayhead">
@@ -257,19 +258,16 @@ function viewToday() {
 
   // stats
   if (isToday) {
-    const leaveZero = C.leaveAt(state, d, d.target - before, t);
     html += `<section class="card"><div class="stats three">
       <div class="stat"><div class="k">Pause</div><div class="v">${C.fmtDur(d.pause)}</div></div>
       <div class="stat"><div class="k">Today ±</div><div class="v ${signCls(d.diff)}">${C.fmtDur(d.diff, true)}</div></div>
-      <div class="stat"><div class="k">Overtime${counts ? '' : ' <span class="nowrap">(until yesterday)</span>'}</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
-    </div>
-    ${leaveZero && C.dateKey(leaveZero) === key && Math.abs(leaveZero - (leave || 0)) > C.MIN ? `<div class="muted small" style="margin-top:10px">Leave at ${C.timeOf(leaveZero)} to bring your overall balance to zero.</div>` : ''}
-    </section>`;
+      <div class="stat"><div class="k">Week ±${counts ? '' : ' <span class="nowrap">(until yesterday)</span>'}</div><div class="v ${signCls(wk.diff)}">${C.fmtDur(wk.diff, true)}</div></div>
+    </div></section>`;
   } else if (isPast) {
     html += `<section class="card"><div class="stats">
       <div class="stat"><div class="k">Pause</div><div class="v">${C.fmtDur(d.pause)}</div></div>
       <div class="stat"><div class="k">Day ±</div><div class="v ${signCls(d.diff)}">${counts ? C.fmtDur(d.diff, true) : '–'}</div></div>
-      <div class="stat"><div class="k">Balance at end of day</div><div class="v ${signCls(balance)}">${C.fmtDur(balance, true)}</div></div>
+      <div class="stat"><div class="k">Week ±</div><div class="v ${signCls(wk.diff)}">${C.fmtDur(wk.diff, true)}</div></div>
       <div class="stat"><div class="k">First in · last out</div><div class="v">${d.first ? `${C.timeOf(d.first)}–${d.running ? '…' : C.timeOf(d.last)}` : '–'}</div></div>
     </div></section>`;
   }
@@ -299,9 +297,6 @@ function viewToday() {
   </div>`;
 
   // week of the day shown
-  const monday = C.addDays(key, -((C.weekday(key) + 6) % 7));
-  const sunday = C.addDays(monday, 6);
-  const wk = C.rangeTotals(state, monday, sunday, today, t);
   const scale = Math.max(480, ...wk.days.map((x) => Math.max(x.target, x.credited)));
   const thisWeek = today >= monday && today <= sunday;
   html += `<h2>${thisWeek ? 'This week' : `Week of ${esc(shortDate(monday))}`}</h2><section class="card">
@@ -327,18 +322,16 @@ function viewMonth() {
   const first = `${cursor.y}-${C.pad(cursor.m + 1)}-01`;
   const last = C.dateKey(new Date(cursor.y, cursor.m + 1, 0));
   const tot = C.rangeTotals(state, first, last, today, t);
-  const endBal = C.balanceBefore(state, last < today ? C.addDays(last, 1) : C.addDays(today, 1), t);
 
   let html = `<div class="monthnav">
     <button class="b-small" data-act="month" data-d="-1" aria-label="Previous month">‹</button>
     <h1>${MONTHS[cursor.m]} ${cursor.y}</h1>
     <button class="b-small" data-act="month" data-d="1" aria-label="Next month">›</button>
   </div>
-  <section class="card"><div class="stats">
+  <section class="card"><div class="stats three">
     <div class="stat"><div class="k">Credited</div><div class="v">${C.fmtDur(tot.credited)}</div></div>
-    <div class="stat"><div class="k">Target (whole month)</div><div class="v">${C.fmtDur(tot.target)}</div></div>
+    <div class="stat"><div class="k">Target</div><div class="v">${C.fmtDur(tot.target)}</div></div>
     <div class="stat"><div class="k">Month ±</div><div class="v ${signCls(tot.diff)}">${C.fmtDur(tot.diff, true)}</div></div>
-    <div class="stat"><div class="k">Balance at ${last < today ? 'month end' : 'today'}</div><div class="v ${signCls(endBal)}">${C.fmtDur(endBal, true)}</div></div>
   </div>
   <div class="row" style="margin-top:12px"><button class="b-small" data-act="csv">⬇︎ Export CSV</button>
   <span class="muted small">Worked ${C.fmtDur(tot.worked)} · pause ${C.fmtDur(tot.pause)}</span></div></section>`;
@@ -379,6 +372,11 @@ function viewMonth() {
     html += `<h2>Public holidays</h2><div class="list">${holidays.map((d) =>
       `<div class="li"><span class="cal-hn">${Number(d.key.slice(8))}</span><span class="grow">${esc(d.holiday)}</span><span class="muted small">${WD_SHORT[C.weekday(d.key)]}</span></div>`).join('')}</div>`;
   }
+  const overall = C.balanceBefore(state, C.addDays(today, 1), t);
+  html += `<h2>Overall</h2><div class="list"><div class="li">
+    <span class="grow small muted">Overtime balance since ${esc(shortDate(state.settings.startDate))}</span>
+    <span class="num small ${signCls(overall)}">${C.fmtDur(overall, true)}</span>
+  </div></div>`;
   return html;
 }
 

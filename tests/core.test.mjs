@@ -129,8 +129,8 @@ test('leave-at accounts for target', () => {
   assert.equal(C.timeOf(C.leaveAt(s, d, d.target, now)), '16:30'); // includes 30 min break
   s.settings.pauseRule = 'deduct';
   assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, now), d.target, now)), '16:30');
-  s.settings.pauseRule = 'off';
-  assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, now), d.target, now)), '16:00');
+  s.settings.pauseRule = 'off'; // the break is assumed regardless of the pause rule
+  assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, now), d.target, now)), '16:30');
 });
 
 test('38.5 h week: leave time includes the remaining break', () => {
@@ -252,4 +252,20 @@ test('pause shortfall under a minute is ignored', () => {
   assert.equal(d.pauseDeducted, 0);
   s.days[MON].work[1].start = at(MON, '12:20');                  // pause ~20 min → real shortfall
   assert.equal(C.dayStats(s, MON).warnings.length, 1);
+});
+
+test('target time stays the same before and after the break', () => {
+  const s = fresh();
+  s.settings.weeklyHours = 38.5;      // 7:42 per day
+  s.settings.pauseRule = 'off';
+  C.clockIn(s, at(MON, '08:43'));
+  const morning = at(MON, '09:00');
+  const t1 = C.leaveAt(s, C.dayStats(s, MON, morning), 462, morning);
+  assert.equal(C.timeOf(t1), '16:55');
+  C.startPause(s, at(MON, '12:00'));
+  const lunch = at(MON, '12:15');     // during the break
+  assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, lunch), 462, lunch)), '16:55');
+  C.resume(s, at(MON, '12:30'));
+  const after = at(MON, '13:00');
+  assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, after), 462, after)), '16:55');
 });

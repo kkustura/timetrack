@@ -323,16 +323,16 @@ export function rangeTotals(state, from, to, today, now = Date.now()) {
 }
 
 /** When to leave so that today's credited time reaches `goalMin`. */
-/** When to leave so that today's credited time reaches `goalMin`, including any
- *  part of the minimum pause still to be taken (unless the pause rule is off). */
+/** When to leave so that today's credited time reaches `goalMin`. A full day always
+ *  assumes the minimum pause (30 min), minus whatever pause was already taken. */
 export function leaveAt(state, stats, goalMin, now) {
   if (!stats.running && !stats.onPause) return null;
   const s = state.settings;
   const worked = stats.worked + stats.pauseDeducted; // undo any deduction; it is re-added below
   let remaining = goalMin - (worked + stats.absenceCredit);
   if (remaining <= 0) return null;
-  if (s.pauseRule !== 'off' && s.minPauseMin - stats.pause >= 1 && worked + remaining > s.minPauseAfterMin) {
-    remaining += Math.min(s.minPauseMin - stats.pause, worked + remaining - s.minPauseAfterMin);
+  if (s.minPauseMin - stats.pause >= 1 && worked + remaining > s.minPauseAfterMin) {
+    remaining += s.minPauseMin - stats.pause;
   }
   return now + remaining * MIN;
 }

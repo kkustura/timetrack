@@ -269,3 +269,28 @@ test('target time stays the same before and after the break', () => {
   const after = at(MON, '13:00');
   assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, after), 462, after)), '16:55');
 });
+
+test('Friday: break only assumed if more than 6 h are still needed', () => {
+  const FRI = '2026-11-20';
+  const make = (thuEnd) => {
+    const s = fresh();
+    s.settings.startDate = MON;
+    s.settings.weeklyHours = 38.5;            // 38:30 per week
+    s.settings.autoPause = false;
+    s.settings.pauseRule = 'off';
+    for (const k of [MON, '2026-11-17', '2026-11-18']) s.days[k] = { work: [{ start: at(k, '08:00'), end: at(k, '16:30') }] }; // 8:30 each
+    s.days['2026-11-19'] = { work: [{ start: at('2026-11-19', '08:00'), end: at('2026-11-19', thuEnd) }] };
+    C.clockIn(s, at(FRI, '08:00'));
+    const now = at(FRI, '08:00');
+    const d = C.dayStats(s, FRI, now);
+    const wk = C.rangeTotals(s, MON, '2026-11-22', FRI, now);
+    const goal = wk.target - (wk.credited - d.credited);
+    return C.timeOf(C.leaveAt(s, d, goal, now));
+  };
+  // Mon–Wed 25:30 + Thu 8:00 = 33:30 → 5:00 needed → no break → 13:00
+  assert.equal(make('16:00'), '13:00');
+  // Thu 6:30 → 32:00 → 6:30 needed → break added → 15:00
+  assert.equal(make('14:30'), '15:00');
+  // exactly 6:00 needed → no break → 14:00
+  assert.equal(make('15:00'), '14:00');
+});

@@ -231,3 +231,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .4); }
   main { max-width: 760px; }
   .stats { grid-template-columns: repeat(3, 1fr); }
 }
+.tag.appt { color: var(--vac); }
+.erow select.kind { flex: 0 0 auto; min-width: 0; width: 7.6em; font-size: 15px; }
+.erow select.kind ~ input.tm { width: 4.4em; font-size: 15px; }

@@ -55,10 +55,11 @@ for (const scheme of ['light', 'dark']) {
 
   // doctor appointment via quick add, 15:00–17:30 → 1h credit
   await page.click('[data-act="quick"][data-type="doctor"]');
-  await page.fill('[data-a="0"][data-f="start"]', '1500');
-  await page.press('[data-a="0"][data-f="start"]', 'Tab');
-  assert.equal(await page.inputValue('[data-a="0"][data-f="start"]'), '15:00');
-  await page.fill('[data-a="0"][data-f="end"]', '17,30');
+  assert.equal(await page.inputValue('[data-w="1"][data-f="kind"]'), 'doctor');
+  await page.fill('[data-w="1"][data-f="start"]', '1500');
+  await page.press('[data-w="1"][data-f="start"]', 'Tab');
+  assert.equal(await page.inputValue('[data-w="1"][data-f="start"]'), '15:00');
+  await page.fill('[data-w="1"][data-f="end"]', '17,30');
   await page.screenshot({ path: `shots/editor-${scheme}.png` });
   await page.click('[data-act="dlg-save"]');
   await page.clock.fastForward('00:29:00'); // 15:00
@@ -145,7 +146,7 @@ for (const scheme of ['light', 'dark']) {
   // persistence across reload
   await page.reload();
   await page.click('[data-tab="today"]');
-  assert.match(await page.textContent('#view'), /Doctor's appointment 15:00–17:30/);
+  assert.match((await page.textContent('#view')).replace(/\s+/g, ' '), /Doctor ?15:00–17:30 · counts 08:00–16:00 only ?1:00/);
   await ctx.close();
 }
 
@@ -197,6 +198,34 @@ for (const scheme of ['light', 'dark']) {
   await page.screenshot({ path: 'shots/autopause-light.png' });
   await page.click('[data-tab="settings"]');
   assert.match(await page.textContent('#view'), /12:00–12:30 is recorded as pause/);
+  await ctx.close();
+}
+
+// log normal work, then turn the first part into a doctor visit in the editor
+{
+  const ctx = await browser.newContext({ ...devices['iPhone 15'], colorScheme: 'light' });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.clock.install({ time: new Date('2026-11-18T07:00:00') });
+  await page.goto(URL);
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('timetrack.v1') || 'null');
+    if (s) { s.settings.startDate = '2026-11-01'; localStorage.setItem('timetrack.v1', JSON.stringify(s)); }
+  });
+  await page.click('[data-tab="today"]');
+  await page.click('[data-act="in"]');
+  await page.clock.fastForward('02:00:00'); // 09:00, the doctor visit ends
+  await page.click('[data-act="pause"]');
+  await page.click('[data-act="resume"]');
+  await page.click('[data-act="edit"]');
+  await page.selectOption('[data-w="0"][data-f="kind"]', 'doctor');
+  await page.click('[data-act="dlg-save"]');
+  await page.clock.fastForward('01:00:00'); // 10:00
+  const txt = (await page.textContent('#view')).replace(/\s+/g, ' ');
+  assert.match(txt, /Doctor ?07:00–09:00 · counts 08:00–16:00 only ?1:00/, txt);
+  assert.match(txt, /\+1:00 h appointment/);
+  assert.match(await page.textContent('#liveClock'), /^1:00:0\d$/);
+  await page.screenshot({ path: 'shots/doctor-light.png', fullPage: true });
   await ctx.close();
 }
 

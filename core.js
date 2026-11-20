@@ -206,12 +206,29 @@ function subtract(ranges, [c, d]) {
   return out;
 }
 
+/** Minutes of an appointment [a, b] that fall inside the appointment window. */
+export function apptCounted(state, key, a, b) {
+  const s = state.settings;
+  const st = Math.max(a, atTime(key, s.apptWindowStart));
+  const en = Math.min(b, atTime(key, s.apptWindowEnd));
+  return Math.max(0, en - st) / MIN;
+}
+
 const total = (ranges) => ranges.reduce((s, [a, b]) => s + (b - a), 0) / MIN;
 
 // ---------- per-day statistics ----------
 
+/** Kinds a work period can have; anything else is normal work. Appointments count
+ *  as work only inside the appointment window (08:00–16:00 by default). */
+export const PERIOD_KINDS = {
+  work:        { label: 'Work',        icon: '💼' },
+  doctor:      { label: 'Doctor',      icon: '🩺' },
+  appointment: { label: 'Appt.',       icon: '📋', long: 'Appointment' },
+};
+export const isAppt = (iv) => iv.kind === 'doctor' || iv.kind === 'appointment';
+
 export function dayIntervals(state, key, now) {
-  const list = (state.days[key]?.work || []).map((w) => ({ start: w.start, end: w.end }));
+  const list = (state.days[key]?.work || []).map((w) => ({ start: w.start, end: w.end, ...(isAppt(w) ? { kind: w.kind } : {}), ...(w.note ? { note: w.note } : {}) }));
   const cur = state.current;
   if (cur?.mode === 'work' && dateKey(cur.since) === key) {
     list.push({ start: cur.since, end: Math.max(now, cur.since), running: true });
@@ -224,11 +241,15 @@ export function dayStats(state, key, now = Date.now()) {
   const day = state.days[key] || {};
   const target = dailyTarget(state, key);
   const intervals = dayIntervals(state, key, now);
-  const merged = merge(intervals.map((i) => [i.start, i.end]));
+  // Appointment periods take precedence over overlapping work, so nothing counts twice.
+  const apptMerged = merge(intervals.filter(isAppt).map((i) => [i.start, i.end]));
+  let workRanges = merge(intervals.filter((i) => !isAppt(i)).map((i) => [i.start, i.end]));
+  for (const r of apptMerged) workRanges = subtract(workRanges, r);
+  const all = merge(intervals.map((i) => [i.start, i.end]));
 
-  let worked = total(merged);
+  let worked = total(workRanges);
   let pause = 0;
-  for (let i = 1; i < merged.length; i++) pause += (merged[i][0] - merged[i - 1][1]) / MIN;
+  for (let i = 1; i < all.length; i++) pause += (all[i][0] - all[i - 1][1]) / MIN;
   const cur = state.current;
   const onPause = cur?.mode === 'pause' && dateKey(cur.since) === key;
   if (onPause) pause += Math.max(0, now - cur.since) / MIN;
@@ -250,24 +271,16 @@ export function dayStats(state, key, now = Date.now()) {
 
   let fullDayCredit = 0;
   let vacationDays = 0;
-  const appts = [];
   for (const a of day.absences || []) {
     if (a.type === 'vacation') {
       if (isWorkday(state, key)) vacationDays += a.half ? 0.5 : 1;
       fullDayCredit += a.half ? target / 2 : target;
     } else if (a.type === 'sick') {
       fullDayCredit += target;
-    } else if (ABSENCE_TYPES[a.type]?.timed && a.start && a.end) {
-      const st = Math.max(atTime(key, a.start), atTime(key, s.apptWindowStart));
-      const en = Math.min(atTime(key, a.end), atTime(key, s.apptWindowEnd));
-      if (en > st) appts.push([st, en]);
     }
   }
   fullDayCredit = Math.min(fullDayCredit, target);
-  // Appointment time only counts inside the window and where you weren't already clocked in.
-  let apptRanges = merge(appts);
-  for (const m of merged) apptRanges = subtract(apptRanges, m);
-  const apptCredit = total(apptRanges);
+  const apptCredit = apptMerged.reduce((sum, [a, b]) => sum + apptCounted(state, key, a, b), 0);
 
   const absenceCredit = fullDayCredit + apptCredit;
   const credited = worked + absenceCredit;
@@ -413,12 +426,15 @@ export function applyAutoPause(state, key) {
   if (!s.autoPause || !day?.work?.length || !(s.minPauseMin > 0)) return false;
   const merged = merge(day.work.map((w) => [w.start, w.end]));
   if (merged.length !== 1) return false; // a pause was already taken
-  const [a, b] = merged[0];
-  if ((b - a) / MIN <= s.minPauseAfterMin) return false;
+  let plain = merge(day.work.filter((w) => !isAppt(w)).map((w) => [w.start, w.end]));
+  for (const w of day.work) if (isAppt(w)) plain = subtract(plain, [w.start, w.end]);
+  if (total(plain) <= s.minPauseAfterMin) return false;
   const ps = atTime(key, s.autoPauseStart);
   const pe = ps + s.minPauseMin * MIN;
-  if (ps <= a || pe >= b) return false; // pause window must lie inside the work time
-  day.work = [{ start: a, end: ps }, { start: pe, end: b }];
+  const i = day.work.findIndex((w) => !isAppt(w) && w.start < ps && w.end > pe);
+  if (i < 0) return false; // pause window must lie inside a work period
+  const w = day.work[i];
+  day.work.splice(i, 1, { start: w.start, end: ps }, { start: pe, end: w.end });
   day.autoPause = true;
   return true;
 }
@@ -432,10 +448,13 @@ export function toCSV(state, from, to, today, now = Date.now()) {
   const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   for (const k of keysBetween(from, to)) {
     const d = dayStats(state, k, now);
-    const abs = d.absences.map((a) => {
-      const t = ABSENCE_TYPES[a.type]?.label || a.type;
-      return a.start ? `${t} ${a.start}-${a.end}` : a.half ? `${t} (half)` : t;
-    });
+    const abs = [
+      ...d.intervals.filter(isAppt).map((i) => `${PERIOD_KINDS[i.kind].long || PERIOD_KINDS[i.kind].label} ${timeOf(i.start)}-${timeOf(i.end)}`),
+      ...d.absences.map((a) => {
+        const t = ABSENCE_TYPES[a.type]?.label || a.type;
+        return a.half ? `${t} (half)` : t;
+      }),
+    ];
     if (d.holiday && !d.absences.some((a) => a.type === 'publicHoliday')) abs.push(d.holiday);
     const future = k > today;
     rows.push([
@@ -448,6 +467,23 @@ export function toCSV(state, from, to, today, now = Date.now()) {
   return rows.map((r) => r.map((c) => (/[",;\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c)).join(',')).join('\n');
 }
 
+/** Older versions stored doctor/other appointments as timed absences ('09:00'–'10:00');
+ *  they are now work periods with a kind. */
+function migrateDays(days) {
+  for (const [key, day] of Object.entries(days)) {
+    const timed = (day.absences || []).filter((a) => ABSENCE_TYPES[a.type]?.timed);
+    if (!timed.length) continue;
+    day.absences = day.absences.filter((a) => !ABSENCE_TYPES[a.type]?.timed);
+    day.work ||= [];
+    for (const a of timed) {
+      if (!a.start || !a.end || a.end <= a.start) continue;
+      day.work.push({ start: atTime(key, a.start), end: atTime(key, a.end), kind: a.type, ...(a.note ? { note: a.note } : {}) });
+    }
+    day.work.sort((x, y) => x.start - y.start);
+  }
+  return days;
+}
+
 export function normalizeState(raw, today) {
   if (!raw || typeof raw !== 'object' || typeof raw.days !== 'object' || !raw.settings) {
     throw new Error('This file does not look like a Time Tracker backup.');
@@ -455,7 +491,7 @@ export function normalizeState(raw, today) {
   return {
     version: 1,
     settings: { ...defaultSettings(today), ...raw.settings },
-    days: raw.days,
+    days: migrateDays(raw.days),
     current: raw.current || null,
     meta: raw.meta && typeof raw.meta === 'object' ? raw.meta : {},
   };

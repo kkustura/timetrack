@@ -227,7 +227,7 @@ function viewToday() {
     const mode = stale ? null : cur?.mode;
     const pill = mode === 'work' ? ['st-work', `Working since ${C.timeOf(cur.since)}`]
       : mode === 'pause' ? ['st-pause', `On pause since ${C.timeOf(cur.since)}`]
-      : ['', d.intervals.length ? `Clocked out at ${C.timeOf(d.last)}` : 'Not clocked in'];
+      : ['', d.intervals.some((i) => !C.isAppt(i)) ? `Clocked out at ${C.timeOf(Math.max(...d.intervals.filter((i) => !C.isAppt(i)).map((i) => i.end)))}` : 'Not clocked in'];
     html += `<section class="card">
       <div class="spread">
         <span class="status-pill ${pill[0]}"><span class="dot"></span>${pill[1]}</span>
@@ -239,7 +239,7 @@ function viewToday() {
         <div class="big" id="liveClock">${C.fmtClock(d.worked)}</div>
         ${mode === 'pause' ? `<div class="pause-timer" title="Current pause">⏸ <span id="livePause">${C.fmtClock((t - cur.since) / C.MIN)}</span></div>` : ''}
       </div>
-      <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${d.absenceCredit ? ` · +${C.fmtDur(d.absenceCredit)} absence credit` : ''}${leave ? `<br>(target reached at ${C.timeOf(leave)})` : ''}</div>
+      <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${d.absenceCredit ? ` · +${C.fmtDur(d.absenceCredit)} h ${d.apptCredit === d.absenceCredit ? 'appointment' : 'credit'}` : ''}${leave ? `<br>(target reached at ${C.timeOf(leave)})` : ''}</div>
       <div class="btns">
         ${!cur || stale ? `<button class="b-work full" data-act="in" ${stale ? 'disabled style="opacity:.4"' : ''}>▶︎ Clock in</button>` : ''}
         ${mode === 'work' ? `<button class="b-pause" data-act="pause">⏸ Pause</button><button class="b-stop" data-act="out">■ Clock out</button>` : ''}
@@ -250,7 +250,7 @@ function viewToday() {
     // summary card for another day
     html += `<section class="card">
       <div class="big">${C.fmtDur(d.credited)}</div>
-      <div class="muted small">${isPast ? 'h credited' : 'h planned'}${d.target ? ` of ${C.fmtDur(d.target)} h target` : ' · no target (day off)'}${d.absenceCredit && d.worked ? ` · ${C.fmtDur(d.worked)} worked + ${C.fmtDur(d.absenceCredit)} absence credit` : ''}</div>
+      <div class="muted small">${isPast ? 'h credited' : 'h planned'}${d.target ? ` of ${C.fmtDur(d.target)} h target` : ' · no target (day off)'}${d.absenceCredit && d.worked ? ` · ${C.fmtDur(d.worked)} worked + ${C.fmtDur(d.absenceCredit)} ${d.apptCredit === d.absenceCredit ? 'appointment' : 'credit'}` : ''}</div>
     </section>`;
   }
 
@@ -275,12 +275,22 @@ function viewToday() {
   // timeline
   html += `<h2>Entries</h2><div class="list">`;
   const rows = [];
-  d.intervals.forEach((iv, i) => {
-    if (i > 0 && iv.start > d.intervals[i - 1].end) {
-      const prev = d.intervals[i - 1].end;
+  let prev = null;
+  d.intervals.forEach((iv) => {
+    if (prev !== null && iv.start - prev >= C.MIN) {
       rows.push(`<div class="li"><span class="tag pause">Pause</span><span class="grow num">${C.timeOf(prev)}–${C.timeOf(iv.start)}${state.days[key]?.autoPause ? ' <span class="muted small">auto</span>' : ''}</span><span class="num muted">${C.fmtDur((iv.start - prev) / C.MIN)}</span></div>`);
     }
-    rows.push(`<div class="li"><span class="tag work">Work</span><span class="grow num">${C.timeOf(iv.start)}–${iv.running ? 'now' : C.timeOf(iv.end)}</span><span class="num muted">${C.fmtDur((iv.end - iv.start) / C.MIN)}</span></div>`);
+    prev = prev === null ? iv.end : Math.max(prev, iv.end);
+    const range = `${C.timeOf(iv.start)}–${iv.running ? 'now' : C.timeOf(iv.end)}`;
+    if (C.isAppt(iv)) {
+      const k = C.PERIOD_KINDS[iv.kind];
+      const raw = (iv.end - iv.start) / C.MIN;
+      const counted = C.apptCounted(state, key, iv.start, iv.end);
+      const extra = counted < raw - 0.5 ? ` <span class="muted small">· counts ${state.settings.apptWindowStart}–${state.settings.apptWindowEnd} only</span>` : '';
+      rows.push(`<div class="li"><span class="tag appt">${k.icon} ${k.label}</span><span class="grow num">${range}${extra}${iv.note ? ` <span class="muted small">· ${esc(iv.note)}</span>` : ''}</span><span class="num muted">${C.fmtDur(counted)}</span></div>`);
+    } else {
+      rows.push(`<div class="li"><span class="tag work">Work</span><span class="grow num">${range}</span><span class="num muted">${C.fmtDur((iv.end - iv.start) / C.MIN)}</span></div>`);
+    }
   });
   if (d.onPause && !stale) rows.push(`<div class="li"><span class="tag pause">Pause</span><span class="grow num">${C.timeOf(cur.since)}–now</span><span class="num muted">${C.fmtDur((t - cur.since) / C.MIN)}</span></div>`);
   d.absences.forEach((a) => rows.push(`<div class="li"><span class="grow">${esc(absLabel(a))}${a.note ? ` <span class="muted small">· ${esc(a.note)}</span>` : ''}</span></div>`));
@@ -494,20 +504,20 @@ function openEditor(key, preset) {
   const day = state.days[key] || {};
   draft = {
     key,
-    work: (day.work || []).map((w) => ({ start: C.timeOf(w.start), end: C.timeOf(w.end) })),
+    work: (day.work || []).map((w) => ({ start: C.timeOf(w.start), end: C.timeOf(w.end), kind: C.isAppt(w) ? w.kind : 'work', note: w.note || '' })),
     absences: (day.absences || []).map((a) => ({ ...a })),
     note: day.note || '',
   };
-  if (preset) draft.absences.push(newAbsence(preset));
+  if (preset && C.PERIOD_KINDS[preset]) draft.work.push({ start: '09:00', end: '10:00', kind: preset, note: '' });
+  else if (preset) draft.absences.push(newAbsence(preset));
   renderEditor();
   $dlg.showModal();
 }
 
 function newAbsence(type) {
-  const a = { id: C.uid(), type };
-  if (C.ABSENCE_TYPES[type].timed) { a.start = '09:00'; a.end = '10:00'; }
-  return a;
+  return { id: C.uid(), type };
 }
+const DAY_ABSENCES = Object.entries(C.ABSENCE_TYPES).filter(([, v]) => !v.timed);
 
 function renderEditor() {
   const { key } = draft;
@@ -522,9 +532,12 @@ function renderEditor() {
       <button type="button" class="b-link" style="font-weight:700" data-act="dlg-save">Save</button>
     </div>
     ${holiday ? `<p class="muted small">🎉 ${esc(holiday)}</p>` : ''}
-    <h2>Work periods</h2>
+    <h2>Work &amp; appointments</h2>
     <div class="list">
       ${draft.work.map((w, i) => `<div class="erow">
+        <select data-w="${i}" data-f="kind" aria-label="Type" class="kind">
+          ${Object.entries(C.PERIOD_KINDS).map(([k, v]) => `<option value="${k}" ${k === w.kind ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
+        </select>
         <input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-w="${i}" data-f="start" value="${w.start}" aria-label="Start">
         <span class="muted">–</span>
         <input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-w="${i}" data-f="end" value="${w.end}" aria-label="End">
@@ -532,28 +545,26 @@ function renderEditor() {
         <button type="button" class="b-icon" data-act="dlg-del-work" data-i="${i}" aria-label="Delete period">✕</button>
       </div>`).join('')}
       ${running ? `<div class="erow muted small">${cur.mode === 'work' ? `▶︎ Running since ${C.timeOf(cur.since)} (adjust on the Today screen)` : `⏸ On pause since ${C.timeOf(cur.since)}`}</div>` : ''}
-      <div class="erow"><button type="button" class="b-link" data-act="dlg-add-work">+ Add work period</button></div>
+      <div class="erow"><button type="button" class="b-link" data-act="dlg-add-work">+ Add period</button></div>
     </div>
-    <p class="muted small" style="margin:-4px 4px 0">Gaps between work periods count as pause.</p>
+    <p class="muted small" style="margin:-4px 4px 0">Gaps count as pause. 🩺 Doctor and 📋 Appointment count as work only between ${s.apptWindowStart} and ${s.apptWindowEnd}; where they overlap work, the appointment wins.</p>
 
-    <h2>Absences &amp; appointments</h2>
+    <h2>Absences</h2>
     <div class="list">
       ${draft.absences.map((a, i) => {
         const t = C.ABSENCE_TYPES[a.type];
         return `<div class="erow">
           <select data-a="${i}" data-f="type" aria-label="Type">
-            ${Object.entries(C.ABSENCE_TYPES).map(([k, v]) => `<option value="${k}" ${k === a.type ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
+            ${DAY_ABSENCES.map(([k, v]) => `<option value="${k}" ${k === a.type ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
           </select>
           <button type="button" class="b-icon" data-act="dlg-del-abs" data-i="${i}" aria-label="Delete">✕</button>
-          ${t.timed ? `<input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-a="${i}" data-f="start" value="${a.start || ''}" aria-label="From"><span class="muted">–</span><input type="text" inputmode="decimal" class="tm" placeholder="8:24" autocomplete="off" maxlength="5" data-a="${i}" data-f="end" value="${a.end || ''}" aria-label="Until">` : ''}
           ${t.allowHalf ? `<label class="row small"><input type="checkbox" data-a="${i}" data-f="half" ${a.half ? 'checked' : ''}> Half day</label>` : ''}
           <input type="text" data-a="${i}" data-f="note" value="${esc(a.note || '')}" placeholder="${a.type === 'publicHoliday' ? 'Name of holiday' : 'Note (optional)'}">
-          ${t.timed ? `<span class="muted small">Counts as work between ${s.apptWindowStart} and ${s.apptWindowEnd}.</span>` : ''}
         </div>`;
       }).join('')}
       <div class="erow"><select id="addAbsType" aria-label="Add absence">
-        <option value="">+ Add absence or appointment…</option>
-        ${Object.entries(C.ABSENCE_TYPES).map(([k, v]) => `<option value="${k}">${v.icon} ${v.label}</option>`).join('')}
+        <option value="">+ Add absence…</option>
+        ${DAY_ABSENCES.map(([k, v]) => `<option value="${k}">${v.icon} ${v.label}</option>`).join('')}
       </select></div>
     </div>
 
@@ -564,28 +575,28 @@ function renderEditor() {
 
 function saveEditor() {
   const { key } = draft;
-  const typed = [...draft.work.flatMap((w) => [w.start, w.end]), ...draft.absences.filter((a) => C.ABSENCE_TYPES[a.type].timed).flatMap((a) => [a.start, a.end])];
+  const typed = draft.work.flatMap((w) => [w.start, w.end]);
   if (typed.some((v) => C.parseTime(v) === null)) { toast('Please enter times like 8:24 (or 824)'); return; }
   draft.work.forEach((w) => { w.start = C.parseTime(w.start); w.end = C.parseTime(w.end); });
-  draft.absences.forEach((a) => { if (a.start) a.start = C.parseTime(a.start); if (a.end) a.end = C.parseTime(a.end); });
+  if (draft.work.some((w) => w.kind !== 'work' && w.start && w.end && w.end <= w.start)) { toast('Appointment end must be after its start'); return; }
   const work = [];
   for (const w of draft.work) {
     if (!w.start || !w.end) continue;
     const start = C.atTime(key, w.start);
     let end = C.atTime(key, w.end);
     if (end <= start) end = C.atTime(C.addDays(key, 1), w.end); // past midnight
-    work.push({ start, end });
+    const p = { start, end };
+    if (w.kind !== 'work') p.kind = w.kind;
+    if (w.note) p.note = w.note;
+    work.push(p);
   }
   work.sort((a, b) => a.start - b.start);
   const absences = draft.absences.map((a) => {
     const out = { id: a.id, type: a.type };
-    if (C.ABSENCE_TYPES[a.type].timed) { out.start = a.start || '09:00'; out.end = a.end || out.start; }
     if (C.ABSENCE_TYPES[a.type].allowHalf && a.half) out.half = true;
     if (a.note?.trim()) out.note = a.note.trim();
     return out;
   });
-  const bad = absences.find((a) => a.start && a.end <= a.start);
-  if (bad) { toast('Appointment end must be after its start'); return; }
   const day = { work, absences, note: draft.note.trim() };
   if (!work.length && !absences.length && !day.note) delete state.days[key];
   else state.days[key] = day;
@@ -604,10 +615,7 @@ $dlg.addEventListener('input', (e) => {
   else if (el.dataset.a) {
     const a = draft.absences[el.dataset.a];
     a[el.dataset.f] = el.type === 'checkbox' ? el.checked : el.value;
-    if (el.dataset.f === 'type') {
-      if (C.ABSENCE_TYPES[a.type].timed && !a.start) { a.start = '09:00'; a.end = '10:00'; }
-      renderEditor();
-    }
+    if (el.dataset.f === 'type') renderEditor();
   }
 });
 $dlg.addEventListener('change', (e) => {
@@ -696,7 +704,7 @@ const actions = {
   'dlg-save'() { saveEditor(); return false; },
   'dlg-add-work'() {
     const lastEnd = draft.work[draft.work.length - 1]?.end;
-    draft.work.push({ start: lastEnd || '08:00', end: lastEnd ? '' : '16:30' });
+    draft.work.push({ start: lastEnd || '08:00', end: lastEnd ? '' : '16:30', kind: 'work', note: '' });
     renderEditor();
     return false;
   },

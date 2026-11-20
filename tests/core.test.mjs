@@ -44,17 +44,60 @@ test('ongoing pause counts as pause, not work', () => {
   assert.ok(d.onPause);
 });
 
-test('doctor appointment counts only inside 08–16 and not twice', () => {
+test('doctor period: counts only inside 08–16, wins over overlapping work', () => {
   const s = fresh();
-  s.days[MON] = {
-    work: [{ start: at(MON, '07:00'), end: at(MON, '09:00') }],
-    absences: [{ id: 'a', type: 'doctor', start: '08:30', end: '17:00' }],
-  };
+  s.days[MON] = { work: [
+    { start: at(MON, '07:00'), end: at(MON, '09:00') },
+    { start: at(MON, '08:30'), end: at(MON, '17:00'), kind: 'doctor' },
+  ] };
   const d = C.dayStats(s, MON, at(MON, '20:00'));
-  // work 2h; appointment 08:30–17:00 → window-clipped 08:30–16:00, minus work overlap 08:30–09:00 → 7h
-  assert.equal(d.worked, 120);
-  assert.equal(d.apptCredit, 7 * 60);
+  // work 07:00–08:30 (doctor wins from 08:30); doctor counted 08:30–16:00
+  assert.equal(d.worked, 90);
+  assert.equal(d.apptCredit, 7 * 60 + 30);
   assert.equal(d.credited, 9 * 60);
+  assert.equal(d.pause, 0);
+});
+
+test('clocked in 08:28 + doctor 08:28–10:00 is not counted twice', () => {
+  const s = fresh();
+  C.clockIn(s, at(MON, '08:28'));
+  s.days[MON] = { work: [{ start: at(MON, '08:28'), end: at(MON, '10:00'), kind: 'doctor' }] };
+  const d = C.dayStats(s, MON, at(MON, '11:00'));
+  assert.equal(d.worked, 60);
+  assert.equal(d.apptCredit, 92);
+  assert.equal(d.credited, 152);
+});
+
+test('appointment outside 08–16 does not count; gap before it is pause', () => {
+  const s = fresh();
+  s.days[MON] = { work: [
+    { start: at(MON, '08:00'), end: at(MON, '15:00') },
+    { start: at(MON, '16:00'), end: at(MON, '17:30'), kind: 'appointment' },
+  ] };
+  const d = C.dayStats(s, MON, at(MON, '20:00'));
+  assert.equal(d.apptCredit, 0);
+  assert.equal(d.credited, 7 * 60);
+  assert.equal(d.pause, 60);
+});
+
+test('old timed absences are migrated to appointment periods', () => {
+  const raw = C.emptyState('2026-11-01');
+  raw.days[MON] = { work: [], absences: [
+    { id: 'a', type: 'doctor', start: '08:30', end: '10:00', note: 'dentist' },
+    { id: 'v', type: 'vacation', half: true },
+  ] };
+  const s = C.normalizeState(JSON.parse(JSON.stringify(raw)));
+  assert.deepEqual(s.days[MON].work, [{ start: at(MON, '08:30'), end: at(MON, '10:00'), kind: 'doctor', note: 'dentist' }]);
+  assert.deepEqual(s.days[MON].absences, [{ id: 'v', type: 'vacation', half: true }]);
+});
+
+test('auto pause splits the work period, never the appointment', () => {
+  const s = fresh();
+  s.days[MON] = { work: [{ start: at(MON, '07:00'), end: at(MON, '09:00'), kind: 'doctor' }] };
+  C.clockIn(s, at(MON, '09:00'));
+  assert.equal(C.clockOut(s, at(MON, '16:00')), true);
+  assert.deepEqual(s.days[MON].work.map((w) => [C.timeOf(w.start), C.timeOf(w.end), w.kind]), [
+    ['07:00', '09:00', 'doctor'], ['09:00', '12:00', undefined], ['12:30', '16:00', undefined]]);
 });
 
 test('vacation and sick credit the daily target; half vacation half', () => {

@@ -362,3 +362,18 @@ test('appointment at the start of a running clock-in moves the start', () => {
   assert.equal(s.days[MON].work.length, 1);
   assert.equal(C.dayStats(s, MON, at(MON, '11:00')).worked, 60);
 });
+
+test('leave time assumes the pause when work + appointment exceed 6 h', () => {
+  const s = fresh();
+  s.days[MON] = { work: [{ start: at(MON, '08:28'), end: at(MON, '10:00'), kind: 'doctor' }] };
+  C.clockIn(s, at(MON, '10:00'));
+  const t = at(MON, '11:00');
+  const d = C.dayStats(s, MON, t);
+  // goal 7:00 = 1:32 doctor + 1:00 worked + 4:28 to go + 0:30 pause
+  assert.equal(C.timeOf(C.leaveAt(s, d, 7 * 60, t)), '15:58');
+  // after taking the 30-min pause, the leave time stays the same
+  C.startPause(s, at(MON, '11:00'));
+  C.resume(s, at(MON, '11:30'));
+  const t2 = at(MON, '11:30');
+  assert.equal(C.timeOf(C.leaveAt(s, C.dayStats(s, MON, t2), 7 * 60, t2)), '15:58');
+});

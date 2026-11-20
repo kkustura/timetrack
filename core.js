@@ -344,7 +344,8 @@ export function leaveAt(state, stats, goalMin, now) {
   const worked = stats.worked + stats.pauseDeducted; // undo any deduction; it is re-added below
   let remaining = goalMin - (worked + stats.absenceCredit);
   if (remaining <= 0) return null;
-  if (s.minPauseMin - stats.pause >= 1 && worked + remaining > s.minPauseAfterMin) {
+  // the day (work + appointments) is longer than 6 h → assume the full pause
+  if (s.minPauseMin - stats.pause >= 1 && worked + stats.absenceCredit + remaining > s.minPauseAfterMin) {
     remaining += s.minPauseMin - stats.pause;
   }
   return now + remaining * MIN;

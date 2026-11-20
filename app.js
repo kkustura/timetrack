@@ -239,7 +239,7 @@ function viewToday() {
         <div class="big" id="liveClock">${C.fmtClock(d.worked)}</div>
         ${mode === 'pause' ? `<div class="pause-timer" title="Current pause">⏸ <span id="livePause">${C.fmtClock((t - cur.since) / C.MIN)}</span></div>` : ''}
       </div>
-      <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${d.absenceCredit ? ` · +${C.fmtDur(d.absenceCredit)} h ${d.apptCredit === d.absenceCredit ? 'appointment' : 'credit'}` : ''}${leave ? `<br>(target reached at ${C.timeOf(leave)})` : ''}</div>
+      <div class="muted small">worked today${d.target ? ` of ${C.fmtDur(d.target)} h target` : ''}${leave ? `<br>(target reached at ${C.timeOf(leave)})` : ''}</div>
       <div class="btns">
         ${!cur || stale ? `<button class="b-work full" data-act="in" ${stale ? 'disabled style="opacity:.4"' : ''}>▶︎ Clock in</button>` : ''}
         ${mode === 'work' ? `<button class="b-pause" data-act="pause">⏸ Pause</button><button class="b-stop" data-act="out">■ Clock out</button>` : ''}

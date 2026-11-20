@@ -223,7 +223,7 @@ for (const scheme of ['light', 'dark']) {
   await page.clock.fastForward('01:00:00'); // 10:00
   const txt = (await page.textContent('#view')).replace(/\s+/g, ' ');
   assert.match(txt, /Doctor ?07:00–09:00 · counts 08:00–16:00 only ?1:00/, txt);
-  assert.match(txt, /\+1:00 h appointment/);
+  assert.doesNotMatch(txt, /h appointment/);
   assert.match(await page.textContent('#liveClock'), /^1:00:0\d$/);
   await page.screenshot({ path: 'shots/doctor-light.png', fullPage: true });
   await ctx.close();

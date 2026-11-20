@@ -600,6 +600,7 @@ function saveEditor() {
   const day = { work, absences, note: draft.note.trim() };
   if (!work.length && !absences.length && !day.note) delete state.days[key];
   else state.days[key] = day;
+  C.trimWorkAroundAppointments(state, key, now());
   save();
   $dlg.close();
   draft = null;

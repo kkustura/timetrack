@@ -337,3 +337,28 @@ test('Friday: break only assumed if more than 6 h are still needed', () => {
   // exactly 6:00 needed → no break → 14:00
   assert.equal(make('15:00'), '14:00');
 });
+
+test('saving an appointment shortens overlapping work, also a running clock-in', () => {
+  const s = fresh();
+  s.days[MON] = { work: [
+    { start: at(MON, '07:30'), end: at(MON, '12:00') },
+    { start: at(MON, '09:00'), end: at(MON, '10:00'), kind: 'doctor' },
+    { start: at(MON, '13:00'), end: at(MON, '13:30'), kind: 'appointment' },
+  ] };
+  C.clockIn(s, at(MON, '12:30'));
+  C.trimWorkAroundAppointments(s, MON, at(MON, '15:00'));
+  assert.deepEqual(s.days[MON].work.map((w) => [C.timeOf(w.start), C.timeOf(w.end), w.kind]), [
+    ['07:30', '09:00', undefined], ['09:00', '10:00', 'doctor'], ['10:00', '12:00', undefined],
+    ['12:30', '13:00', undefined], ['13:00', '13:30', 'appointment']]);
+  assert.equal(C.timeOf(s.current.since), '13:30');
+});
+
+test('appointment at the start of a running clock-in moves the start', () => {
+  const s = fresh();
+  C.clockIn(s, at(MON, '08:28'));
+  s.days[MON] = { work: [{ start: at(MON, '08:28'), end: at(MON, '10:00'), kind: 'doctor' }] };
+  C.trimWorkAroundAppointments(s, MON, at(MON, '11:00'));
+  assert.equal(C.timeOf(s.current.since), '10:00');
+  assert.equal(s.days[MON].work.length, 1);
+  assert.equal(C.dayStats(s, MON, at(MON, '11:00')).worked, 60);
+});

@@ -439,6 +439,31 @@ export function applyAutoPause(state, key) {
   return true;
 }
 
+/** Cut appointment periods out of the work periods of `key` (and out of a running
+ *  clock-in that started that day), so work and appointments never overlap. */
+export function trimWorkAroundAppointments(state, key, now) {
+  const day = state.days[key];
+  if (!day?.work?.length) return;
+  const appts = merge(day.work.filter(isAppt).map((w) => [w.start, w.end]));
+  if (!appts.length) return;
+  const out = [];
+  for (const w of day.work) {
+    if (isAppt(w)) { out.push(w); continue; }
+    let pieces = [[w.start, w.end]];
+    for (const r of appts) pieces = subtract(pieces, r);
+    for (const [a, b] of pieces) if (b - a >= MIN) out.push({ start: a, end: b });
+  }
+  const cur = state.current;
+  if (cur?.mode === 'work' && dateKey(cur.since) === key) {
+    for (const [a, b] of appts) {
+      if (b <= cur.since || a >= Math.max(now, cur.since)) continue;
+      if (a - cur.since >= MIN) out.push({ start: cur.since, end: a });
+      cur.since = b;
+    }
+  }
+  day.work = out.sort((x, y) => x.start - y.start);
+}
+
 // ---------- export / import ----------
 
 const hours = (min) => (min / 60).toFixed(2);

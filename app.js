@@ -137,6 +137,7 @@ function render() {
 }
 
 const DAY = 24 * 60 * C.MIN;
+const APP_VERSION = 18; // keep in sync with CACHE in sw.js
 
 function backupReminder(t) {
   const meta = state.meta;
@@ -495,7 +496,7 @@ function viewSettings() {
     <div class="li"><button class="b-link" style="color:var(--danger)" data-act="reset">Delete all data…</button></div>
   </div>
   <input type="file" id="importFile" accept="application/json,.json" hidden>
-  <p class="muted small" style="text-align:center;margin-top:24px">Time Tracker · your personal time tracking</p>`;
+  <p class="muted small" style="text-align:center;margin-top:24px">Time Tracker · version ${APP_VERSION}</p>`;
 }
 
 // ---------- day editor ----------
